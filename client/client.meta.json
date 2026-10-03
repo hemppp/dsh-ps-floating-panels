@@ -1,0 +1,645 @@
+{
+ "inputs": {
+  "client/config.ts": {
+   "bytes": 6611,
+   "imports": [],
+   "format": "esm"
+  },
+  "../../new1.2/node_modules/dockview-core/dist/package/main.esm.mjs": {
+   "bytes": 784725,
+   "imports": [],
+   "format": "esm"
+  },
+  "../../new1.2/node_modules/dockview/dist/package/main.esm.mjs": {
+   "bytes": 583,
+   "imports": [
+    {
+     "path": "../../new1.2/node_modules/dockview-core/dist/package/main.esm.mjs",
+     "kind": "import-statement",
+     "original": "dockview-core"
+    }
+   ],
+   "format": "esm"
+  },
+  "../../new1.2/node_modules/dockview-react/dist/package/main.esm.mjs": {
+   "bytes": 35431,
+   "imports": [
+    {
+     "path": "../../new1.2/node_modules/dockview/dist/package/main.esm.mjs",
+     "kind": "import-statement",
+     "original": "dockview"
+    },
+    {
+     "path": "react",
+     "kind": "import-statement",
+     "external": true
+    },
+    {
+     "path": "react-dom",
+     "kind": "import-statement",
+     "external": true
+    },
+    {
+     "path": "../../new1.2/node_modules/dockview/dist/package/main.esm.mjs",
+     "kind": "import-statement",
+     "original": "dockview"
+    }
+   ],
+   "format": "esm"
+  },
+  "client/portal-proxy.tsx": {
+   "bytes": 6012,
+   "imports": [
+    {
+     "path": "react",
+     "kind": "import-statement",
+     "external": true
+    },
+    {
+     "path": "react-dom",
+     "kind": "import-statement",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/panel-shell.tsx": {
+   "bytes": 4461,
+   "imports": [
+    {
+     "path": "react",
+     "kind": "import-statement",
+     "external": true
+    },
+    {
+     "path": "client/portal-proxy.tsx",
+     "kind": "import-statement",
+     "original": "../portal-proxy.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/ConversationPanel.tsx": {
+   "bytes": 822,
+   "imports": [
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/ConversationTreePanel.tsx": {
+   "bytes": 730,
+   "imports": [
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/CodePreviewPanel.tsx": {
+   "bytes": 622,
+   "imports": [
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/ComposerPanel.tsx": {
+   "bytes": 737,
+   "imports": [
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/WorkspacePanel.tsx": {
+   "bytes": 601,
+   "imports": [
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/CodeTreePanel.tsx": {
+   "bytes": 586,
+   "imports": [
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/AgentTeamPanel.tsx": {
+   "bytes": 805,
+   "imports": [
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/registry.tsx": {
+   "bytes": 2309,
+   "imports": [
+    {
+     "path": "client/config.ts",
+     "kind": "import-statement",
+     "original": "../config.ts"
+    },
+    {
+     "path": "client/panels/ConversationPanel.tsx",
+     "kind": "import-statement",
+     "original": "./ConversationPanel.tsx"
+    },
+    {
+     "path": "client/panels/ConversationTreePanel.tsx",
+     "kind": "import-statement",
+     "original": "./ConversationTreePanel.tsx"
+    },
+    {
+     "path": "client/panels/CodePreviewPanel.tsx",
+     "kind": "import-statement",
+     "original": "./CodePreviewPanel.tsx"
+    },
+    {
+     "path": "client/panels/ComposerPanel.tsx",
+     "kind": "import-statement",
+     "original": "./ComposerPanel.tsx"
+    },
+    {
+     "path": "client/panels/WorkspacePanel.tsx",
+     "kind": "import-statement",
+     "original": "./WorkspacePanel.tsx"
+    },
+    {
+     "path": "client/panels/CodeTreePanel.tsx",
+     "kind": "import-statement",
+     "original": "./CodeTreePanel.tsx"
+    },
+    {
+     "path": "client/panels/AgentTeamPanel.tsx",
+     "kind": "import-statement",
+     "original": "./AgentTeamPanel.tsx"
+    }
+   ],
+   "format": "esm"
+  },
+  "client/panels/tabs.tsx": {
+   "bytes": 3492,
+   "imports": [
+    {
+     "path": "client/config.ts",
+     "kind": "import-statement",
+     "original": "../config.ts"
+    },
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panel-shell.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/layout-persist.ts": {
+   "bytes": 11732,
+   "imports": [
+    {
+     "path": "client/config.ts",
+     "kind": "import-statement",
+     "original": "./config.ts"
+    }
+   ],
+   "format": "esm"
+  },
+  "client/status-badge.tsx": {
+   "bytes": 2301,
+   "imports": [
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/conflict-dialog.tsx": {
+   "bytes": 2102,
+   "imports": [
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/PsFloatingPanelsApp.tsx": {
+   "bytes": 12772,
+   "imports": [
+    {
+     "path": "react",
+     "kind": "import-statement",
+     "external": true
+    },
+    {
+     "path": "../../new1.2/node_modules/dockview-react/dist/package/main.esm.mjs",
+     "kind": "import-statement",
+     "original": "dockview-react"
+    },
+    {
+     "path": "client/config.ts",
+     "kind": "import-statement",
+     "original": "./config.ts"
+    },
+    {
+     "path": "client/panels/registry.tsx",
+     "kind": "import-statement",
+     "original": "./panels/registry.tsx"
+    },
+    {
+     "path": "client/panels/tabs.tsx",
+     "kind": "import-statement",
+     "original": "./panels/tabs.tsx"
+    },
+    {
+     "path": "client/panels/panel-shell.tsx",
+     "kind": "import-statement",
+     "original": "./panels/panel-shell.tsx"
+    },
+    {
+     "path": "client/layout-persist.ts",
+     "kind": "import-statement",
+     "original": "./layout-persist.ts"
+    },
+    {
+     "path": "client/status-badge.tsx",
+     "kind": "import-statement",
+     "original": "./status-badge.tsx"
+    },
+    {
+     "path": "client/conflict-dialog.tsx",
+     "kind": "import-statement",
+     "original": "./conflict-dialog.tsx"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  },
+  "client/conflict-detect.ts": {
+   "bytes": 4310,
+   "imports": [],
+   "format": "esm"
+  },
+  "client/config-source.ts": {
+   "bytes": 6611,
+   "imports": [
+    {
+     "path": "client/config.ts",
+     "kind": "import-statement",
+     "original": "./config.ts"
+    }
+   ],
+   "format": "esm"
+  },
+  "client/dockview-base.ts": {
+   "bytes": 155517,
+   "imports": [],
+   "format": "esm"
+  },
+  "client/theme-css.ts": {
+   "bytes": 5504,
+   "imports": [],
+   "format": "esm"
+  },
+  "client/inject-css.ts": {
+   "bytes": 6788,
+   "imports": [
+    {
+     "path": "client/dockview-base.ts",
+     "kind": "import-statement",
+     "original": "./dockview-base.ts"
+    },
+    {
+     "path": "client/theme-css.ts",
+     "kind": "import-statement",
+     "original": "./theme-css.ts"
+    }
+   ],
+   "format": "esm"
+  },
+  "client/locales.ts": {
+   "bytes": 5069,
+   "imports": [],
+   "format": "esm"
+  },
+  "client/index.tsx": {
+   "bytes": 8281,
+   "imports": [
+    {
+     "path": "client/config.ts",
+     "kind": "import-statement",
+     "original": "./config.ts"
+    },
+    {
+     "path": "client/PsFloatingPanelsApp.tsx",
+     "kind": "import-statement",
+     "original": "./PsFloatingPanelsApp.tsx"
+    },
+    {
+     "path": "client/conflict-detect.ts",
+     "kind": "import-statement",
+     "original": "./conflict-detect.ts"
+    },
+    {
+     "path": "client/config-source.ts",
+     "kind": "import-statement",
+     "original": "./config-source.ts"
+    },
+    {
+     "path": "client/inject-css.ts",
+     "kind": "import-statement",
+     "original": "./inject-css.ts"
+    },
+    {
+     "path": "client/locales.ts",
+     "kind": "import-statement",
+     "original": "./locales.ts"
+    },
+    {
+     "path": "client/layout-persist.ts",
+     "kind": "import-statement",
+     "original": "./layout-persist.ts"
+    },
+    {
+     "path": "client/config.ts",
+     "kind": "import-statement",
+     "original": "./config.ts"
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "import-statement",
+     "external": true
+    }
+   ],
+   "format": "esm"
+  }
+ },
+ "outputs": {
+  "client/client.js": {
+   "imports": [
+    {
+     "path": "react",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react-dom",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react-dom",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    },
+    {
+     "path": "react/jsx-runtime",
+     "kind": "require-call",
+     "external": true
+    }
+   ],
+   "exports": [],
+   "entryPoint": "client/index.tsx",
+   "inputs": {
+    "client/index.tsx": {
+     "bytesInOutput": 3091
+    },
+    "client/config.ts": {
+     "bytesInOutput": 2117
+    },
+    "client/PsFloatingPanelsApp.tsx": {
+     "bytesInOutput": 8772
+    },
+    "../../new1.2/node_modules/dockview-core/dist/package/main.esm.mjs": {
+     "bytesInOutput": 770303
+    },
+    "../../new1.2/node_modules/dockview-react/dist/package/main.esm.mjs": {
+     "bytesInOutput": 29754
+    },
+    "client/panels/panel-shell.tsx": {
+     "bytesInOutput": 1502
+    },
+    "client/portal-proxy.tsx": {
+     "bytesInOutput": 2991
+    },
+    "client/panels/ConversationPanel.tsx": {
+     "bytesInOutput": 258
+    },
+    "client/panels/ConversationTreePanel.tsx": {
+     "bytesInOutput": 277
+    },
+    "client/panels/CodePreviewPanel.tsx": {
+     "bytesInOutput": 257
+    },
+    "client/panels/ComposerPanel.tsx": {
+     "bytesInOutput": 242
+    },
+    "client/panels/WorkspacePanel.tsx": {
+     "bytesInOutput": 246
+    },
+    "client/panels/CodeTreePanel.tsx": {
+     "bytesInOutput": 245
+    },
+    "client/panels/AgentTeamPanel.tsx": {
+     "bytesInOutput": 249
+    },
+    "client/panels/registry.tsx": {
+     "bytesInOutput": 456
+    },
+    "client/panels/tabs.tsx": {
+     "bytesInOutput": 1922
+    },
+    "client/layout-persist.ts": {
+     "bytesInOutput": 5627
+    },
+    "client/status-badge.tsx": {
+     "bytesInOutput": 1366
+    },
+    "client/conflict-dialog.tsx": {
+     "bytesInOutput": 1611
+    },
+    "client/conflict-detect.ts": {
+     "bytesInOutput": 1489
+    },
+    "client/config-source.ts": {
+     "bytesInOutput": 2806
+    },
+    "client/dockview-base.ts": {
+     "bytesInOutput": 155390
+    },
+    "client/theme-css.ts": {
+     "bytesInOutput": 5398
+    },
+    "client/inject-css.ts": {
+     "bytesInOutput": 4667
+    },
+    "client/locales.ts": {
+     "bytesInOutput": 4459
+    }
+   },
+   "bytes": 1008013
+  }
+ }
+}

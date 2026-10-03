@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# local scratch / build scratch
+.tmp/
+*.tmp
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "jsx": "react-jsx",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "outDir": "F:/new1.2/.ps-smoke",
+    "rootDir": "client",
+    "types": [],
+    "baseUrl": "F:/new1.2/node_modules",
+    "paths": {
+      "react": ["@types/react"],
+      "react/jsx-runtime": ["@types/react/jsx-runtime"],
+      "react-dom": ["@types/react-dom"],
+      "react-dom/client": ["@types/react-dom/client"],
+      "dockview": ["dockview"],
+      "dockview-react": ["dockview-react"]
+    }
+  },
+  "include": ["client/**/*.ts", "client/**/*.tsx"]
+}

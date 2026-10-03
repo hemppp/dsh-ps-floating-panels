@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "strict": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": "host",
+    "outDir": "lib",
+    "declarationDir": "lib/types",
+    "types": ["node"],
+    "typeRoots": ["F:/new1.2/node_modules/@types"],
+    "baseUrl": "F:/new1.2/node_modules",
+    "paths": {
+      "@deepseek-ai/cordis": ["@deepseek-ai/cordis"],
+      "@deepseek-ai/schemastery": ["@deepseek-ai/schemastery"]
+    }
+  },
+  "include": ["host/**/*.ts"],
+  "exclude": ["node_modules", "lib", "client"]
+}

@@ -1,0 +1,187 @@
+/*
+ * dsh-ps-floating-panels — theme layer.
+ *
+ * Colour ONLY. Every value is a `var(--dsw-alias-*, <fallback>)` so the panels
+ * follow the host's light/dark theme: when the host defines the alias token the
+ * token wins, and the fallback keeps the panel legible when it is absent.
+ *
+ * Geometry (positioning, flex, sizing, transitions) lives in inject-css.ts
+ * under the `ps-` class names, so this file never has to restate layout.
+ *
+ * The fallbacks are plain hex/rgb literals by necessity — a CSS custom
+ * property needs a concrete value to fall back to. They are NOT stray colours:
+ * they are always inside the second argument of `var()`.
+ */
+
+.ps-floating-root {
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Outer Dockview container: the ONE place rounded corners are applied. Native
+ * DSH elements mounted through the proxy are never re-rounded / re-bordered. */
+.ps-dock-shell {
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.ps-dock-toolbar {
+  background: var(--dsw-alias-bg-layer-2, #f5f5f7);
+  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+}
+
+.ps-dock-toolbar__title {
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+  font-weight: 600;
+}
+
+.ps-dock-btn {
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.14));
+  border-radius: 6px;
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+  cursor: pointer;
+}
+
+.ps-dock-btn:hover {
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+  border-color: var(--dsw-alias-brand-primary, #4d6bfe);
+}
+
+.ps-dock-btn:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary, #4d6bfe);
+  outline-offset: 1px;
+}
+
+/* Tab bar (our defaultTabComponent) */
+.ps-tab {
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+}
+
+.ps-tab[data-active='true'] {
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+}
+
+.ps-tab__label {
+  color: inherit;
+}
+
+.ps-tab__btn {
+  color: var(--dsw-alias-label-tertiary, #9a9aa0);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ps-tab__btn:hover {
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+  background: var(--dsw-alias-bg-layer-2, #f0f0f2);
+}
+
+/* Panel content */
+.ps-panel-body {
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+}
+
+.ps-panel-body[data-collapsed='true'] {
+  background: var(--dsw-alias-bg-layer-2, #f5f5f7);
+}
+
+.ps-panel-hint {
+  color: var(--dsw-alias-label-tertiary, #9a9aa0);
+}
+
+/* Native decoupling proxy placeholder */
+.ps-proxy-placeholder {
+  background: var(--dsw-alias-bg-layer-2, #f5f5f7);
+  border: 1px dashed var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.18));
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+}
+
+.ps-proxy-placeholder__title {
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+  font-weight: 600;
+}
+
+.ps-proxy-placeholder__body {
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+}
+
+.ps-proxy-placeholder__hint {
+  color: var(--dsw-alias-label-tertiary, #9a9aa0);
+}
+
+/* Status badge — not rendered at all when showStatusBadge is false */
+.ps-status-badge {
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+}
+
+.ps-status-badge__dot {
+  background: var(--dsw-alias-state-success-primary, #22c55e);
+}
+
+.ps-status-badge__dot[data-floating='true'] {
+  background: var(--dsw-alias-state-business-primary, #4d6bfe);
+}
+
+.ps-status-badge__dot[data-collapsed='true'] {
+  background: var(--dsw-alias-state-warn-primary, #f59e0b);
+}
+
+.ps-launcher-pill {
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.ps-launcher-pill:hover {
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+  border-color: var(--dsw-alias-brand-primary, #4d6bfe);
+}
+
+.ps-launcher-pill__count {
+  background: var(--dsw-alias-brand-primary, #4d6bfe);
+  color: var(--dsw-alias-label-primary-foreground, #ffffff);
+}
+
+/* Conflict dialog */
+.ps-conflict-backdrop {
+  background: var(--dsw-alias-bg-mask, rgba(0, 0, 0, 0.42));
+}
+
+.ps-conflict-dialog {
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+}
+
+.ps-conflict-dialog__title {
+  color: var(--dsw-alias-state-warn-primary, #f59e0b);
+  font-weight: 600;
+}
+
+.ps-conflict-dialog__list {
+  color: var(--dsw-alias-label-primary, #1c1c1e);
+}
+
+.ps-conflict-dialog__hint {
+  color: var(--dsw-alias-label-secondary, #6b6b70);
+}

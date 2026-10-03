@@ -1,0 +1,18 @@
+# dsh-ps-floating-panels bundle patch.
+#
+# Applied as a profile bundle layer (the `package.json` `dsh.bundle.patch`
+# field) over dsh-base. Activate with:
+#   dsh plugin --profile web add github:<owner>/dsh-ps-floating-panels
+# then restart the web profile (`dsh --profile web`) for the row to mount.
+#
+# The row is a bare plugin by package name: the node half (exports ".")
+# registers the plugin's settings namespace and reads/writes the persisted
+# layout snapshot; the `dsh.client` declaration in package.json makes the
+# browser half (exports "./client", served at /plugins/<id>/client.js) load
+# in the web GUI and render into the `shell.overlay` root.
+#
+# `name` MUST be quoted: it is a package name, and an unquoted scalar would be
+# misread as a YAML token.
+- insert:
+    - id: dsh-ps-floating-panels
+      name: 'dsh-ps-floating-panels'

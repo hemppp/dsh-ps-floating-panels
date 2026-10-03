@@ -1,0 +1,65 @@
+{
+  "$schema": "https://deepseek-harness.github.io/deepseek-harness/schema/dsh-plugin-manifest.json",
+  "manifestVersion": 1,
+  "id": "dsh-ps-floating-panels",
+  "name": "dsh-ps-floating-panels",
+  "displayName": "PS 浮动面板 / PS Floating Panels",
+  "version": "0.1.0",
+  "description": "Photoshop 式 Dockview 浮动/拆分面板系统（仅桌面端）。",
+  "license": "MIT",
+  "kind": "bundle",
+  "platform": "web",
+  "host": {
+    "entry": "./lib/index.js",
+    "types": "./lib/types/index.d.ts",
+    "configNamespace": "dsh-ps-floating-panels"
+  },
+  "client": {
+    "entry": "./client/client.js",
+    "moduleId": "dsh-ps-floating-panels",
+    "format": "lazy-cjs-factory",
+    "extensionPoint": "shell.overlay",
+    "inject": [
+      "@deepseek-ai/dsh-client-ui-layout",
+      "@deepseek-ai/dsh-client-ui-slots",
+      "@deepseek-ai/dsh-client-ui-theme",
+      "@deepseek-ai/dsh-client-locale",
+      "@deepseek-ai/dsh-client-ui-primitives"
+    ],
+    "externals": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@deepseek-ai/dsh-client-ui-primitives"
+    ]
+  },
+  "bundle": {
+    "patch": "./cordis.patch.yml",
+    "rowId": "dsh-ps-floating-panels"
+  },
+  "config": {
+    "namespace": "dsh-ps-floating-panels",
+    "schema": "schemastery",
+    "fields": [
+      "enabled",
+      "showLauncher",
+      "showStatusBadge",
+      "minDesktopWidth",
+      "layoutMode",
+      "persistDebounceMs",
+      "collapsedPanels",
+      "autoHideOnHover",
+      "layout"
+    ]
+  },
+  "panels": [
+    "conversation",
+    "conversation-tree",
+    "code-preview",
+    "composer",
+    "workspace",
+    "code-tree",
+    "agent-team"
+  ],
+  "targets": ["desktop"]
+}
