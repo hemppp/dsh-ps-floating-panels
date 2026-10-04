@@ -25,6 +25,8 @@ ctx.slots.inject('shell.overlay', () => ctx.slots.register({
 
 `shell.overlay` 是 ui-layout 已声明的**附加（additive）**槽位，因此本插件不抢占任何 `single` 槽位，也不与官方 UI 争位；浮层根自身 `pointer-events: none`，只有具体面板/徽标/启动器吃指针事件，保证点击穿透到底层界面（可对照 `dsh-market` 的 `shell.overlay` 用法）。
 
+> `apply()` 的任何失败都**不会**让 DSH 启动失败，也不会静默消失：失败阶段与错误原文会显示在兜底卡片上，并写进 `window.__DSH_PS_PANELS_ACTIVATION__`（见第十节）。
+
 > 原生面板内容不被复制/重写：本插件通过页面全局 `window.__DSH_NATIVE_PANELS__`（v1，`getElement(panelId)` / `subscribe`）把宿主原生面板**门户（portal）**进 Dockview 面板体；无桥接时渲染占位说明。
 
 内部拆分/分组树由 **Dockview / dockview-react** 承载（与宿主页面**共用同一份 React**；Dockview 本身**内联进本 bundle**，不与宿主共享实例，见下文“打包契约”）。Dockview 的**基础样式由 client 半内联注入**（loader 只服务 JS、不服务独立 CSS 文件）。
@@ -194,6 +196,39 @@ dsh-ps-floating-panels/
 - 不读写会话日志、不新增 `SessionEventMap` 事件。
 - 宿主半仅两件事：注册 settings 命名空间；经 `ctx.effect` 读写布局 JSON 快照。
 - 浏览器半只挂 `shell.overlay` 一个槽位，只渲染表现层。
+
+## 十、激活守卫与自诊断（v0.1.1+）
+
+浏览器半的 `apply()` **永不抛错**。
+
+原因：DSH 的 Web boot 审计只看每个 client entry 的 **fiber 状态**。任一 entry 的 `apply` 抛错，整个页面就以
+
+```
+Error: web boot: 1 entry did not activate
+dsh-ps-floating-panels: failed
+```
+
+启动失败（崩溃报告 `source: web-boot`）——而且**报告里没有插件的真实异常**：审计只打印状态（`active` / `pending` / `failed`），`s.fiber` 存在时连错误消息都不打印。一个 UI 插件因此足以让整个 DSH 打不开，并且现场只留下 `…: failed` 三个字。
+
+现在：
+
+- `apply()` 全程在一个守卫里，逐阶段打点：`styles` → `config` → `conflicts` → `locale` → `persist` → `slot` → `active`（`enabled: false` 时记 `disabled`）。
+- 失败时：`console.error('[dsh-ps-floating-panels] activation failed (stage: …, build …)')`，并把结果写进页面全局 **`window.__DSH_PS_PANELS_ACTIVATION__`** = `{ ok, stage, build, at, error: { name, message, stack } }`。
+- 同时在 `shell.overlay` 注册一张红色兜底卡片，把**失败阶段 + 错误原文**直接显示在界面上（不需要 DevTools）。
+- 无论成功失败，`apply()` 都正常返回：DSH 照常启动，最坏情况退化为“插件不生效 + 可读诊断”。
+
+配套的降级（这两条是 v0.1.1 修掉的真问题）：
+
+- **locale 注册 best-effort**：宿主 locale 服务对「同命名空间 + 同语种」的重复注册会抛 `locale namespace "…" already has locale "…"`；同一页面内二次激活即可触发，而原实现在 `ctx.effect` 抛错时会在 `catch` 里**再注册一次**，把那次重复注册变成整个 entry 的 `failed`。现在只记一条 `warn`：插件自带词典，照旧工作。
+- **样式注入 best-effort**：拿不到可用的 `document.head` 只是丢样式，不丢插件。
+
+自检（浏览器控制台）：
+
+```js
+window.__DSH_PS_PANELS_ACTIVATION__   // { ok, stage, build, at, error? }
+```
+
+`scripts/smoke-client.mjs` 覆盖了这些分支：正常宿主、宿主拒绝重复 locale 注册、`slots` 服务抛错、`enabled: false`。
 
 ## License
 

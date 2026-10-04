@@ -32,13 +32,16 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // client/index.tsx
 var index_exports = {};
 __export(index_exports, {
+  ACTIVATION_GLOBAL: () => ACTIVATION_GLOBAL,
+  CLIENT_BUILD: () => CLIENT_BUILD,
   DEFAULT_CONFIG: () => DEFAULT_CONFIG,
   PERSIST_GLOBAL: () => PERSIST_GLOBAL,
   SETTINGS_NAMESPACE: () => SETTINGS_NAMESPACE,
   apply: () => apply,
   inject: () => inject,
   name: () => name,
-  normalizeConfig: () => normalizeConfig
+  normalizeConfig: () => normalizeConfig,
+  readActivation: () => readActivation
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -20428,7 +20431,70 @@ function createTranslator(dict, fallback = en, base) {
 // client/index.tsx
 var import_jsx_runtime14 = require("react/jsx-runtime");
 var SETTINGS_NAMESPACE = "dsh-ps-floating-panels";
+var CLIENT_BUILD = "0.1.1+activation-guard";
 var PERSIST_GLOBAL = "__DSH_PS_PANELS_PERSIST__";
+var ACTIVATION_GLOBAL = "__DSH_PS_PANELS_ACTIVATION__";
+function describeError(error) {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message, stack: error.stack };
+  }
+  try {
+    return { name: typeof error, message: String(error) };
+  } catch {
+    return { name: "unknown", message: "(unprintable thrown value)" };
+  }
+}
+function publishActivation(record) {
+  if (typeof window === "undefined") return;
+  try {
+    ;
+    window[ACTIVATION_GLOBAL] = record;
+  } catch {
+  }
+}
+function readActivation(win = typeof window === "undefined" ? void 0 : window) {
+  if (!win || typeof win !== "object") return void 0;
+  const value = win[ACTIVATION_GLOBAL];
+  return value && typeof value === "object" ? value : void 0;
+}
+function ActivationFailure({ stage, error }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+    "div",
+    {
+      role: "alert",
+      style: {
+        position: "fixed",
+        right: "16px",
+        bottom: "16px",
+        zIndex: 2147483e3,
+        maxWidth: "min(520px, calc(100vw - 32px))",
+        padding: "12px 14px",
+        borderRadius: "10px",
+        border: "1px solid rgba(255, 120, 120, 0.55)",
+        background: "rgba(30, 12, 12, 0.92)",
+        color: "#f4f4f5",
+        font: "12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word"
+      },
+      children: `dsh-ps-floating-panels \u672A\u80FD\u6FC0\u6D3B\uFF08\u9636\u6BB5\uFF1A${stage}\uFF09
+${error.name}: ${error.message}
+
+\u63D2\u4EF6\u5DF2\u6309\u975E\u81F4\u547D\u65B9\u5F0F\u9000\u51FA\uFF0CDSH \u53EF\u6B63\u5E38\u4F7F\u7528\u3002
+\u628A\u8FD9\u4E24\u884C\u53D1\u7ED9\u4F5C\u8005\u5373\u53EF\u5B9A\u4F4D\uFF1B\u9875\u9762\u5168\u5C40 ${ACTIVATION_GLOBAL} \u91CC\u6709\u540C\u6837\u5185\u5BB9\u3002`
+    }
+  );
+}
+function mountActivationBanner(ctx, stage, error) {
+  const slots = ctx.slots;
+  if (!slots || typeof slots.inject !== "function" || typeof slots.register !== "function") return;
+  const described = describeError(error);
+  slots.inject("shell.overlay", () => slots.register({
+    name: "shell.overlay",
+    id: "dsh-ps-floating-panels-activation-error",
+    label: () => "PS Panels (activation error)"
+  }, () => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ActivationFailure, { stage, error: described })));
+}
 function resolvePersistHooks(ctx) {
   if (ctx.psPanelsPersist && typeof ctx.psPanelsPersist === "object") return ctx.psPanelsPersist;
   if (typeof window === "undefined") return void 0;
@@ -20448,14 +20514,31 @@ function buildHostBridge(hooks) {
     } : void 0
   };
 }
+function safeInjectStyles() {
+  try {
+    return injectPsStyles();
+  } catch (error) {
+    console.warn("[dsh-ps-floating-panels] stylesheet injection skipped:", error);
+    return () => {
+    };
+  }
+}
 function registerLocale(ctx) {
   const locale = ctx.locale;
   if (!locale || typeof locale.register !== "function") return createTranslator(en);
-  const register = () => locale.register(PS_LOCALE_NS, { zh, en });
+  const register = () => {
+    try {
+      return locale.register(PS_LOCALE_NS, { zh, en });
+    } catch (error) {
+      console.warn(`[dsh-ps-floating-panels] locale registration skipped (${PS_LOCALE_NS}):`, error);
+      return void 0;
+    }
+  };
   if (typeof ctx.effect === "function") {
     try {
       ctx.effect(register, "dsh-ps-floating-panels: dictionaries");
-    } catch {
+    } catch (error) {
+      console.warn("[dsh-ps-floating-panels] ctx.effect unavailable for dictionaries:", error);
       register();
     }
   } else {
@@ -20464,7 +20547,8 @@ function registerLocale(ctx) {
   let bound;
   try {
     if (typeof locale.bind === "function") bound = locale.bind(PS_LOCALE_NS);
-  } catch {
+  } catch (error) {
+    console.warn(`[dsh-ps-floating-panels] locale bind skipped (${PS_LOCALE_NS}):`, error);
     bound = void 0;
   }
   return createTranslator(zh, en, bound);
@@ -20472,35 +20556,57 @@ function registerLocale(ctx) {
 var name = "dsh-ps-floating-panels";
 var inject = ["slots", "locale", "theme"];
 function apply(ctx, config) {
-  const removeStyles = injectPsStyles();
-  if (typeof ctx.effect === "function") {
+  let stage = "styles";
+  try {
+    let Root2 = function() {
+      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PsFloatingPanelsApp, { t, configSource, host, conflicts });
+    };
+    var Root = Root2;
+    const removeStyles = safeInjectStyles();
+    if (typeof ctx.effect === "function") {
+      try {
+        ctx.effect(() => removeStyles, "dsh-ps-floating-panels: styles");
+      } catch {
+      }
+    }
+    stage = "config";
+    const configSource = resolveConfigSource(ctx, SETTINGS_NAMESPACE, config ?? null);
+    const initial = configSource.getSnapshot();
+    if (!initial.enabled) {
+      publishActivation({ ok: true, stage: "disabled", build: CLIENT_BUILD, at: Date.now() });
+      return;
+    }
+    stage = "conflicts";
+    const { conflicts } = detectConflictsFromWindow();
+    if (conflicts.length > 0) {
+      console.warn(
+        `[dsh-ps-floating-panels] conflicting third-party plugins detected (${CONFLICT_KEYWORDS.join("/")}):`,
+        conflicts.map((c) => c.id).join(", "),
+        "\u2014 disable them to avoid panel/layout conflicts."
+      );
+    }
+    stage = "locale";
+    const t = registerLocale(ctx);
+    stage = "persist";
+    const host = buildHostBridge(resolvePersistHooks(ctx));
+    stage = "slot";
+    Root2.displayName = "PsFloatingPanelsRoot";
+    ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+      name: "shell.overlay",
+      id: "dsh-ps-floating-panels-root",
+      label: () => "PS Panels"
+    }, Root2));
+    publishActivation({ ok: true, stage: "active", build: CLIENT_BUILD, at: Date.now() });
+    console.info(`[dsh-ps-floating-panels] active (build ${CLIENT_BUILD})`);
+  } catch (error) {
+    publishActivation({ ok: false, stage, build: CLIENT_BUILD, at: Date.now(), error: describeError(error) });
+    console.error(`[dsh-ps-floating-panels] activation failed (stage: ${stage}, build ${CLIENT_BUILD}):`, error);
     try {
-      ctx.effect(() => removeStyles, "dsh-ps-floating-panels: styles");
-    } catch {
+      mountActivationBanner(ctx, stage, error);
+    } catch (bannerError) {
+      console.error("[dsh-ps-floating-panels] activation banner unavailable:", bannerError);
     }
   }
-  const configSource = resolveConfigSource(ctx, SETTINGS_NAMESPACE, config ?? null);
-  const initial = configSource.getSnapshot();
-  if (!initial.enabled) return;
-  const { conflicts } = detectConflictsFromWindow();
-  if (conflicts.length > 0) {
-    console.warn(
-      `[dsh-ps-floating-panels] conflicting third-party plugins detected (${CONFLICT_KEYWORDS.join("/")}):`,
-      conflicts.map((c) => c.id).join(", "),
-      "\u2014 disable them to avoid panel/layout conflicts."
-    );
-  }
-  const t = registerLocale(ctx);
-  const host = buildHostBridge(resolvePersistHooks(ctx));
-  function Root() {
-    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PsFloatingPanelsApp, { t, configSource, host, conflicts });
-  }
-  Root.displayName = "PsFloatingPanelsRoot";
-  ctx.slots.inject("shell.overlay", () => ctx.slots.register({
-    name: "shell.overlay",
-    id: "dsh-ps-floating-panels-root",
-    label: () => "PS Panels"
-  }, Root));
 }
 
 return module.exports; } });

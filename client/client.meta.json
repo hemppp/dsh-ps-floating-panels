@@ -405,7 +405,7 @@
    "format": "esm"
   },
   "client/index.tsx": {
-   "bytes": 8444,
+   "bytes": 15791,
    "imports": [
     {
      "path": "client/config.ts",
@@ -564,7 +564,7 @@
    "entryPoint": "client/index.tsx",
    "inputs": {
     "client/index.tsx": {
-     "bytesInOutput": 3108
+     "bytesInOutput": 7143
     },
     "client/config.ts": {
      "bytesInOutput": 2117
@@ -639,7 +639,7 @@
      "bytesInOutput": 4459
     }
    },
-   "bytes": 1008380
+   "bytes": 1012415
   }
  }
 }

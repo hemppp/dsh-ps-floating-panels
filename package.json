@@ -1,6 +1,6 @@
 {
   "name": "dsh-ps-floating-panels",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Photoshop 式 Dockview 浮动/拆分面板系统 for DeepSeek Harness Web GUI（仅桌面端）：在 shell.overlay 渲染根上挂载 7 个可浮动、可停靠、可拆分、可缩放的玻璃感面板，布局可持久化、可重置。",
   "type": "module",
   "main": "./lib/index.js",
@@ -36,10 +36,8 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-theme",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-primitives"
+        "@deepseek-ai/dsh-client-locale"
       ]
     }
   },

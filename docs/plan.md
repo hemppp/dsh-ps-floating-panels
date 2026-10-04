@@ -35,9 +35,12 @@
 
 ## 阶段 ④：本地验证
 
-- [ ] `pnpm install` 通过 —— **未执行：本机无 node/npm/pnpm**
-- [ ] `pnpm run bundle` 通过 —— **未执行**（产物为作者机器构建，构建时间 10-03 20:43，晚于源码 19:30/19:43，故产物是新鲜的）
-- [ ] `pnpm run gates` 通过 —— **未执行**
+> 2026-10-04 复核：本机工具链其实**存在**（见备注），以下四项现已实跑。
+
+- [x] `pnpm install` —— **无需**：依赖已在 `F:/new1.2/node_modules`（node 24 同源），无需重新安装
+- [x] 客户端 bundle 重建 —— `node scripts/build-client.mjs`（esbuild，本机无 tsdown），可复现：不改源码时产物逐字节相同
+- [x] 三套测试 —— `node scripts/run-logic-tests.mjs` **LOGIC PASSED 34/34**；`node scripts/smoke-host.mjs` **HOST PASSED 14/14**；`node scripts/smoke-client.mjs` **SMOKE PASSED 26/26**（v0.1.1 起含激活守卫分支）
+- [x] `tsc` 双配置 —— `tsconfig.hostcheck.json` 与 `tsconfig.check.json` 均 **exit 0**（tsc 5.9.3）
 - [ ] `python3 <skill>/scripts/verify_plugin.py .` 通过 —— **部分通过（见下）**
 
 ### 校验器结果说明（整改前：5/11 FAIL）
@@ -53,10 +56,14 @@
 
 ## 阶段 ⑤：安装与浏览器冒烟
 
-- [ ] 安装成功（`dsh plugin --profile web add ...`）—— **未执行：本机无 `dsh` CLI**
-- [ ] 启动日志无 `plugin tree failed to load`
-- [ ] 浏览器无 `slot entry crashed`
-- [ ] 冒烟功能可用
+- [x] 安装成功（另一台机器，DSH 0.2.0-rc.2 / Electron 44）—— 客户端 entry **已进入 boot graph**（`dsh.client` 声明被识别、bundle 被拉取并物化）
+- [x] 启动日志无 `plugin tree failed to load` —— 宿主插件树正常挂载
+- [ ] 浏览器无 `slot entry crashed` —— **未能观察到页面**：boot 审计先失败，见下
+- [x] 真实失败已定位：`web boot: 1 entry did not activate` / `dsh-ps-floating-panels: failed`
+  - 崩溃报告（`source: web-boot`）**不含**插件真实异常：审计只打印 fiber **状态**，`s.fiber` 存在时连错误消息都不打印
+  - `failed`（而非 `import failed` / `pending`）⇒ bundle 已物化、`slots`/`locale`/`theme` 三个服务都在，**是 `apply()` 抛错**
+  - v0.1.1 修掉最可能的抛错点（重复 locale 注册 → 见 决策变更记录）并加激活守卫：`apply()` 永不抛错，失败阶段 + 错误原文进 `window.__DSH_PS_PANELS_ACTIVATION__` 与界面兜底卡片
+- [ ] 冒烟功能可用 —— **待用户在 v0.1.1 上重装确认**（兜底卡片会直接写出失败阶段/错误）
 
 ## 阶段 ⑥：发布
 
@@ -67,16 +74,28 @@
 
 ## 备注
 
-- **降级说明**：本机无 node/npm/pnpm/dsh 工具链，因此 ④⑤ 阶段的可执行验证全部跳过，
-  仅完成静态合同整改。恢复工具链后需重跑 `pnpm install && pnpm run bundle && pnpm run gates`
-  与 `verify_plugin.py`，并补做安装冒烟。
+- **工具链修正（2026-10-04）**：原记录"本机无 node/npm/pnpm/dsh"**已不成立**。
+  实况：`node` = `D:\ruanjian\node.24\node.exe`（v24，含 npm/pnpm）；`tsc` 5.9.3 与 `esbuild` 在
+  `F:/new1.2/node_modules`；`dsh` CLI 在 `F:\ruanjian\harness\resources\runtime\cli\bin\dsh.cmd`；
+  DSH 源码只以 `F:\ruanjian\harness\resources\app.asar`（121 MB，可当文本检索）形式存在。
+  **tsdown 未安装**，故 ④ 的客户端构建走 `scripts/build-client.mjs`（esbuild 复刻同一产物契约）；
+  `tsdown.client.ts` 只是等价声明，产物与之一致才有意义 —— 两者都产出 `__ModuleLoader__.load` 懒工厂。
+  本机只有 `desktop` profile（由 Electron 独占管理，外部 CLI 不能组合），**故端到端装配只能靠真实机器验证**。
 - **未整改项（有意保留）**：
   1. `exports['./client'] = './client/client.js'` —— 保留，改则破坏构建。
   2. `main = './lib/index.js'`（带 `./` 前缀）—— 保留，合法。
   3. `host/` + `client/` 目录布局 —— 保留，不搬迁。
-- **待验证的整改项（有加载期风险）**：`cordis.patch.yml` 的 `name` 由 `'dsh-ps-floating-panels'`
-  改为不带引号，以对齐 skill 合同与校验器。**原文件注释曾警告 name 必须带引号**。
-  两者均为合法 YAML（纯标量无特殊字符），但作者注释暗示 DSH 加载器可能有特殊处理。
-  此改动**未经运行时验证**，恢复工具链后应优先确认 insert 行正常挂载。
+- **已消除的加载期风险**：`cordis.patch.yml` 的 `name` 不带引号 —— 另一台机器上宿主插件树
+  正常挂载（未出现 `plugin tree failed to load`），该改动可视为通过。
 - **决策变更记录**：
   - 2026-10-04：按 skill 合同整改（移除官方 peer 依赖、补 LICENSE 与 plan.md、patch name 去引号）。
+  - 2026-10-04：修 boot 致命失败（v0.1.1）。
+    1. `client/index.tsx` 的 `apply()` 全程包守卫：失败只记 `console.error` + 页面全局
+       `__DSH_PS_PANELS_ACTIVATION__` + `shell.overlay` 兜底卡片，**不再把整个 Web boot 拖挂**。
+    2. locale 注册改为 best-effort：宿主 locale 服务对「同命名空间 + 同语种」重复注册会抛
+       `locale namespace "…" already has locale "…"`，而原实现在 `ctx.effect` 抛错时会在 `catch`
+       里**再注册一次**，把重复注册升级成 entry `failed`；现在只 warn 一次，自带词典照旧工作。
+    3. `dsh.client.inject` 去掉两个**并非 client 行**的名字（`-client-ui-slots`、`-client-ui-primitives`）：
+       它们只是 baseline 模块，写进 inject 只增加图噪声（对照 `dshmarket`：require primitives 但从不列入 inject）。
+    4. `package.json` 版本 `0.1.0` → `0.1.1`，客户端产物自带 `CLIENT_BUILD = '0.1.1+activation-guard'`，
+       便于确认机器上装的是哪一版。
