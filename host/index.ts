@@ -94,9 +94,10 @@ export const Config: Schema<Config> = Schema.object({
 /* -------------------------------------------------------------------------- *
  * Structural settings seam.
  *
- * The `settings` service is declared by `@deepseek-ai/dsh-settings`, which is
- * an OPTIONAL peer of this package (see package.json). To keep the host half
- * buildable and loadable when that peer is absent from a given profile's flat
+ * The `settings` service is declared by `@deepseek-ai/dsh-settings`, which the
+ * DSH profile provides at runtime (the package declares no official
+ * `@deepseek-ai/*` dependency; see package.json). To keep the host half
+ * buildable and loadable when that service is absent from a given profile's flat
  * fallback, the service is described STRUCTURALLY here (the same discipline the
  * browser half uses for the client context) instead of importing its types.
  * The shape below mirrors the official `dsh-settings` Cordis API: an owner scope

@@ -11,8 +11,10 @@
 # browser half (exports "./client", served at /plugins/<id>/client.js) load
 # in the web GUI and render into the `shell.overlay` root.
 #
-# `name` MUST be quoted: it is a package name, and an unquoted scalar would be
-# misread as a YAML token.
+# `name` is the package name. Written unquoted to match the skill contract
+# (`- insert: - id: <pkg> / name: <pkg>`); `dsh-ps-floating-panels` is a plain
+# scalar with no YAML-significant characters, so quoting and not quoting parse
+# to the identical string.
 - insert:
     - id: dsh-ps-floating-panels
-      name: 'dsh-ps-floating-panels'
+      name: dsh-ps-floating-panels

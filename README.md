@@ -148,7 +148,7 @@ pnpm run build         # build:host + build:client
 - **`id` 必须等于包名** `dsh-ps-floating-panels`，否则 client-modules 报 “loaded without registering …”。
 - 运行时**外部化**：仅 `react`、`react-dom`、`react/jsx-runtime`、`@deepseek-ai/dsh-client-ui-primitives` —— 这几个由宿主模块表注入，绝不内联（内联会分裂 React 实例）。React 基线 `~18.3.1`。
 - **Dockview 必须内联**：`dockview` / `dockview-react` **不在**宿主模块表里（宿主没有任何包依赖它们），因此运行时 `require('dockview')` 会 “module not found”。它们必须打包进 `client/client.js`（版本 `^8.4.0`，列为 `devDependencies`，仅构建期内联，不是运行时依赖）；Dockview 自身对 React 的 import 仍通过上面的外部化解析到宿主的同一份 React。
-- `cordis` 是 `peerDependency`，且必须使用 **scoped** `@deepseek-ai/cordis`（与宿主同身份；scoped / unscoped 混用会“双 Cordis 分裂”）。
+- `cordis` 由 DSH profile 在运行时提供，本包**不**声明 `@deepseek-ai/*` 依赖（仅列为 `devDependencies` 供本地构建/类型检查）。构建与运行都必须使用 **scoped** `@deepseek-ai/cordis`（与宿主同身份；scoped / unscoped 混用会“双 Cordis 分裂”）。
 - 宿主半入口为**命名导出** `name` + `inject` + `Config`（Schemastery）+ `apply(ctx, config)`，**禁止 default export**。
 
 ---
