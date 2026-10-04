@@ -358,7 +358,7 @@
    "format": "esm"
   },
   "client/conflict-detect.ts": {
-   "bytes": 4310,
+   "bytes": 6413,
    "imports": [],
    "format": "esm"
   },
@@ -405,7 +405,7 @@
    "format": "esm"
   },
   "client/index.tsx": {
-   "bytes": 8281,
+   "bytes": 8444,
    "imports": [
     {
      "path": "client/config.ts",
@@ -564,7 +564,7 @@
    "entryPoint": "client/index.tsx",
    "inputs": {
     "client/index.tsx": {
-     "bytesInOutput": 3091
+     "bytesInOutput": 3108
     },
     "client/config.ts": {
      "bytesInOutput": 2117
@@ -621,7 +621,7 @@
      "bytesInOutput": 1611
     },
     "client/conflict-detect.ts": {
-     "bytesInOutput": 1489
+     "bytesInOutput": 1839
     },
     "client/config-source.ts": {
      "bytesInOutput": 2806
@@ -639,7 +639,7 @@
      "bytesInOutput": 4459
     }
    },
-   "bytes": 1008013
+   "bytes": 1008380
   }
  }
 }

@@ -3,7 +3,7 @@
  * Bundled by esbuild and run under node — see scripts/run-logic-tests.mjs.
  */
 import { PANEL_IDS, DEFAULT_CONFIG, normalizeConfig, PANEL_META } from '../client/config.ts'
-import { detectConflicts } from '../client/conflict-detect.ts'
+import { detectConflicts, isHostPackage, matchesConflictKeyword } from '../client/conflict-detect.ts'
 import {
   defaultLayoutJson,
   captureLayout,
@@ -36,6 +36,30 @@ ok(conflicts.length === 2, `detectConflicts finds 2 (got ${conflicts.length}: ${
 ok(!conflicts.some(c => c.id === 'dsh-ps-floating-panels'), 'detectConflicts never reports self')
 ok(detectConflicts(undefined).length === 0, 'detectConflicts tolerates missing graph')
 ok(detectConflicts({ entries: 'x' }).length === 0, 'detectConflicts tolerates non-array entries')
+
+// The real shell registers keyword-bearing client entries of its own. Reporting
+// them would fire the dialog on every boot and tell the user to disable the
+// very package that declares the `shell.overlay` slot this plugin mounts into.
+const hostEntries = [
+  { id: '@deepseek-ai/dsh-client-ui-layout' },
+  { id: '@deepseek-ai/dsh-client-ui-dockkit' },
+  { id: '@deepseek-ai/dsh-client-ui-conversation' },
+]
+ok(detectConflicts({ entries: hostEntries }).length === 0, 'detectConflicts never reports host packages')
+ok(isHostPackage('@deepseek-ai/dsh-client-ui-layout') === true, 'isHostPackage recognises the host scope')
+ok(isHostPackage('@someone/dsh-client-ui-layout') === false, 'isHostPackage rejects third-party scopes')
+ok(matchesConflictKeyword('@deepseek-ai/dsh-client-ui-layout') === 'layout', 'host ids still match keywords (exclusion is the scope, not the name)')
+
+// Mixed graph: host rows plus exactly one genuine third-party overlap.
+const mixed = detectConflicts({ entries: [...hostEntries, { id: '@someone/my-dock-plugin' }, { id: 'dsh-ps-floating-panels' }] })
+ok(mixed.length === 1 && mixed[0].id === '@someone/my-dock-plugin', `mixed graph reports only the third-party plugin (got ${mixed.map(c => c.id).join(',') || 'none'})`)
+
+// Word-boundary matching: a name that merely CONTAINS a keyword is not evidence.
+ok(matchesConflictKeyword('panelize-lint') === undefined, 'matchesConflictKeyword ignores a mere substring (panelize-lint)')
+ok(matchesConflictKeyword('@scope/my-panel-dock') === 'dock', 'matchesConflictKeyword matches a hyphenated segment')
+ok(matchesConflictKeyword('some.dockviewPanels') === 'panel', 'matchesConflictKeyword splits camelCase and accepts a plural segment')
+ok(matchesConflictKeyword('ws-overlay-kit') === 'overlay', 'matchesConflictKeyword matches an overlay segment')
+ok(matchesConflictKeyword('unrelated-helper') === undefined, 'matchesConflictKeyword returns undefined when nothing matches')
 
 /* ---- layout-persist ---- */
 const def = defaultLayoutJson()

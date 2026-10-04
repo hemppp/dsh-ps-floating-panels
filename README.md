@@ -59,7 +59,7 @@ ctx.slots.inject('shell.overlay', () => ctx.slots.register({
 - **折叠**：标题栏折叠按钮把面板收起为标题条；折叠态写进布局参数，随快照往返。
 - **启动器（launcher）**：浮层角落的芯片提供 **隐藏全部 / 显示全部 / 重置布局** 三个动作。
 - **状态徽标**：右下角徽标汇总当前面板数 / 浮窗数 / 已收起数（受 `showStatusBadge` 控制）。
-- **冲突提示**：启动时读取 `window.__DSH_BOOT__`，若检测到同样占用 dock/panel/overlay/layout 表面的插件，给出一次性提示（不阻塞、不自动禁用）。
+- **冲突提示**：启动时读取 `window.__DSH_BOOT__`，若检测到同样占用 dock/panel/overlay/layout 表面的**第三方**插件，给出一次性提示（不阻塞、不自动禁用）。匹配按包名的**词段**判定（`@scope/my-panel-dock` 命中，`panelize-lint` 不命中），且**永不报告宿主自带包**（`@deepseek-ai/*`，例如声明了本插件所挂 `shell.overlay` 槽的 `@deepseek-ai/dsh-client-ui-layout`）——否则每次启动都会误报宿主并诱导用户禁用它。
 - **持久化**：面板几何、分组树、浮窗与折叠态一并快照（`version` + `dockview` + `collapsed` + `floating` + `updatedAt`），去抖后保存。
 
 ---
@@ -101,8 +101,11 @@ export const Config = Schema.object({
 ## 五、安装
 
 ```sh
-# 推荐：pin 到具体 commit（prepare 自包含构建）
-dsh plugin --profile web add "github:<owner>/dsh-ps-floating-panels#<sha>"
+# 推荐：pin 到具体 commit（prepare 自包含构建）；<sha> 换成 GitHub 上的提交号
+dsh plugin --profile web add "github:hemppp/dsh-ps-floating-panels#<sha>"
+
+# 或用默认分支最新提交（不 pin，方便初次试用）
+dsh plugin --profile web add "github:hemppp/dsh-ps-floating-panels"
 
 # 本地开发（link 直连，改完 pnpm run build 刷新页面即可）
 dsh plugin --profile web add link:/absolute/path/to/dsh-ps-floating-panels

@@ -19947,6 +19947,7 @@ function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }) {
 
 // client/conflict-detect.ts
 var SELF_ID = "dsh-ps-floating-panels";
+var HOST_SCOPES = ["@deepseek-ai/"];
 var CONFLICT_KEYWORDS = [
   "dock",
   "panel",
@@ -19957,9 +19958,16 @@ var CONFLICT_KEYWORDS = [
 function isSelf(id) {
   return id === SELF_ID || id.startsWith(SELF_ID + "@") || id.includes(SELF_ID);
 }
-function matchesConflictKeyword(id) {
+function isHostPackage(id) {
   const lower = id.toLowerCase();
-  return CONFLICT_KEYWORDS.find((kw) => lower.includes(kw));
+  return HOST_SCOPES.some((scope) => lower.startsWith(scope));
+}
+function idSegments(id) {
+  return id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+function matchesConflictKeyword(id) {
+  const segments = new Set(idSegments(id));
+  return CONFLICT_KEYWORDS.find((kw) => segments.has(kw) || segments.has(kw + "s"));
 }
 function detectConflicts(graph) {
   if (!graph || typeof graph !== "object") return [];
@@ -19971,7 +19979,7 @@ function detectConflicts(graph) {
     if (!raw || typeof raw !== "object") continue;
     const id = raw.id;
     if (typeof id !== "string" || id.length === 0) continue;
-    if (isSelf(id) || seen.has(id)) continue;
+    if (isSelf(id) || isHostPackage(id) || seen.has(id)) continue;
     const keyword = matchesConflictKeyword(id);
     if (keyword === void 0) continue;
     seen.add(id);
@@ -20477,7 +20485,7 @@ function apply(ctx, config) {
   const { conflicts } = detectConflictsFromWindow();
   if (conflicts.length > 0) {
     console.warn(
-      "[dsh-ps-floating-panels] conflicting plugins detected (dock/panel/overlay/layout):",
+      `[dsh-ps-floating-panels] conflicting third-party plugins detected (${CONFLICT_KEYWORDS.join("/")}):`,
       conflicts.map((c) => c.id).join(", "),
       "\u2014 disable them to avoid panel/layout conflicts."
     );

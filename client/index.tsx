@@ -30,7 +30,7 @@ import {
   type PsPanelsConfig,
 } from './config.ts'
 import { PsFloatingPanelsApp } from './PsFloatingPanelsApp.tsx'
-import { detectConflictsFromWindow, type ConflictEntry } from './conflict-detect.ts'
+import { CONFLICT_KEYWORDS, detectConflictsFromWindow, type ConflictEntry } from './conflict-detect.ts'
 import { resolveConfigSource } from './config-source.ts'
 import { injectPsStyles } from './inject-css.ts'
 import { createTranslator, en, PS_LOCALE_NS, zh, type Translate } from './locales.ts'
@@ -178,10 +178,12 @@ export function apply(ctx: PsClientContext, config?: Partial<PsPanelsConfig>): v
 
   // Conflict detection: a boot graph may be absent (older / non-web host) — that
   // is a silent skip, never a throw. A hit warns in the log AND renders a dialog.
+  // Host packages (`@deepseek-ai/*`) are already excluded by the detector, so a
+  // hit here is always a third-party plugin.
   const { conflicts } = detectConflictsFromWindow()
   if (conflicts.length > 0) {
     console.warn(
-      '[dsh-ps-floating-panels] conflicting plugins detected (dock/panel/overlay/layout):',
+      `[dsh-ps-floating-panels] conflicting third-party plugins detected (${CONFLICT_KEYWORDS.join('/')}):`,
       conflicts.map((c: ConflictEntry) => c.id).join(', '),
       '— disable them to avoid panel/layout conflicts.',
     )

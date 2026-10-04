@@ -13,16 +13,37 @@
  *    boot) — then detection is skipped silently, never throwing.
  *  - Entries may be malformed — each is validated before use.
  *  - The plugin's own id is never reported.
+ *  - The host's own client packages are never reported, whatever they are
+ *    called ({@link HOST_SCOPES}); the shipped shell registers keyword-bearing
+ *    ids of its own, and advising the user to disable the shell is worse than
+ *    saying nothing.
  *
  * Detection is intentionally a heuristic over the ENTRY IDs (package names),
  * because entry `id` is the wire-stable identity the host composes. A matching
- * keyword plus "not this package" is enough to warn; the user decides.
+ * keyword plus "neither this package nor the host" is enough to warn; the user
+ * decides. Entry rows carry no built-in flag — `id` is the only discriminator.
  *
  * @module dsh-ps-floating-panels/client/conflict-detect
  */
 
 /** This package's id — never reported as a conflict. */
 export const SELF_ID = 'dsh-ps-floating-panels'
+
+/**
+ * Package-name prefixes owned by the DeepSeek Harness distribution itself.
+ *
+ * Host client packages are NEVER conflicts: they are the shell the user is
+ * already looking at. This exclusion is what keeps the detector usable — the
+ * shipped shell itself registers keyword-bearing client entries
+ * (`@deepseek-ai/dsh-client-ui-layout` owns the `shell.overlay` slot this plugin
+ * mounts into; `@deepseek-ai/dsh-client-ui-dockkit` owns the split-tree and
+ * floating implementation). Without it, every single boot reports the host and
+ * tells the user to disable it, which would tear the shell down.
+ *
+ * A `WebBootEntry` row carries no built-in flag (only `id`/`url`/`rev` and
+ * optional edges), so the id's scope is the only available discriminator.
+ */
+export const HOST_SCOPES: readonly string[] = ['@deepseek-ai/']
 
 /**
  * Entry-id keywords that mark a plugin as owning overlapping surfaces. Kept in
@@ -59,14 +80,38 @@ export function isSelf(id: string): boolean {
   return id === SELF_ID || id.startsWith(SELF_ID + '@') || id.includes(SELF_ID)
 }
 
+/** Is an entry id part of the host distribution rather than a third-party plugin? */
+export function isHostPackage(id: string): boolean {
+  const lower = id.toLowerCase()
+  return HOST_SCOPES.some((scope) => lower.startsWith(scope))
+}
+
+/**
+ * Split an entry id into lower-case word segments: on every non-alphanumeric
+ * boundary (npm scope, `/`, `.`, `-`, `_`) and on lower→upper camelCase
+ * transitions.
+ */
+function idSegments(id: string): string[] {
+  return id
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+}
+
 /**
  * Should a boot entry be treated as conflicting? Matching is case-insensitive
  * and word-boundary based on the id's segments, so `@scope/my-panel-dock` and
- * `some.dockview.plugin` both match while an unrelated `panelize-lint` does not.
+ * `some.dockview.panels` both match while an unrelated `panelize-lint` does
+ * not; a bare plural segment (`my-floating-panels`) matches its keyword too.
+ *
+ * Segment equality (rather than a substring test) is deliberate: the dialog is
+ * shown at boot and asks the user to act, so a name that merely *contains* a
+ * keyword is not enough evidence of surface overlap.
  */
 export function matchesConflictKeyword(id: string): string | undefined {
-  const lower = id.toLowerCase()
-  return CONFLICT_KEYWORDS.find((kw) => lower.includes(kw))
+  const segments = new Set(idSegments(id))
+  return CONFLICT_KEYWORDS.find((kw) => segments.has(kw) || segments.has(kw + 's'))
 }
 
 /**
@@ -85,7 +130,7 @@ export function detectConflicts(graph: unknown): ConflictEntry[] {
     if (!raw || typeof raw !== 'object') continue
     const id = (raw as BootEntryLike).id
     if (typeof id !== 'string' || id.length === 0) continue
-    if (isSelf(id) || seen.has(id)) continue
+    if (isSelf(id) || isHostPackage(id) || seen.has(id)) continue
     const keyword = matchesConflictKeyword(id)
     if (keyword === undefined) continue
     seen.add(id)
