@@ -1,21 +1,31 @@
 /**
- * dsh-ps-floating-panels — root component: the Photoshop-style split/floating
- * panel system.
+ * dsh-ps-floating-panels — root component: the host's own UI, re-hosted in a
+ * Photoshop-style split / floating panel system.
  *
- * Responsibilities:
- *  - Viewport gate: below `minDesktopWidth` it renders NOTHING, leaving the
- *    host's native mobile layout untouched.
- *  - Split mode: mount a DockviewReact grid of the seven panels from
- *    `api.fromJSON(defaultLayoutJson())` (or a saved layout). This is a real
- *    split layout, not an in-place overlay of the old composition.
- *  - PS Dock: floating groups stay enabled, dragging docks/splits/tears out,
- *    dropping near an edge snaps, and panels merge into tab groups.
- *  - Collapse: each panel's tab header carries the fold button; folded panels
- *    keep their title bar and the flag lives in Dockview `params`, so it is
- *    serialized with the layout.
+ * This component does NOT draw any product surface of its own. It renders one
+ * Dockview grid whose panels each hold a REAL piece of the DSH shell, taken
+ * apart by {@link NativeAdopter} (see native-regions.ts) and revealed by
+ * collapsing the now-empty native skeleton (see native-shell.ts):
+ *
+ * ```
+ * ┌──────────┬────────────────────────┬──────────┐
+ * │ sidebar  │  main (conversation)   │ pane A   │
+ * │          │                        ├──────────┤
+ * │          │                        │ pane B   │
+ * └──────────┴────────────────────────┴──────────┘
+ * ```
+ *
+ *  - Viewport gate: below `minDesktopWidth` nothing is adopted and nothing is
+ *    rendered, so the native mobile layout stays untouched.
+ *  - Dynamic panel set: the panels ARE the discovered regions. A region the host
+ *    adds later (a new dockkit pane) gets a panel; a region the host closes
+ *    loses it — a region can therefore never be stranded inside a hidden
+ *    container.
+ *  - Restore: the toolbar's "restore native layout" puts every real node back
+ *    where it came from, un-collapses the shell and leaves a single pill to
+ *    adopt again.
  *  - Persistence: `onDidLayoutChange` (debounced) → `toJSON()` → host bridge +
- *    local snapshot; the reset control restores the default layout, expanded.
- *  - Conflict warning + status badge.
+ *    local snapshot; the reset control restores the default split, expanded.
  *
  * @module dsh-ps-floating-panels/client/PsFloatingPanelsApp
  */
@@ -24,8 +34,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { DockviewReact } from 'dockview-react'
 import type { DockviewApi } from 'dockview'
 import {
-  PANEL_IDS,
-  PANEL_META,
+  NATIVE_COMPONENT,
+  readNativeAdopted,
+  writeNativeAdopted,
   type PanelId,
   type PersistedLayout,
   type PsPanelsConfig,
@@ -37,59 +48,128 @@ import { PsPanelsProvider, type PsPanelsContextValue } from './panels/panel-shel
 import {
   applyLayout,
   createLayoutPersistence,
-  isPersistedLayout,
+  regionIdOfParams,
   readFloating,
   type LayoutHostBridge,
   type LayoutPersistence,
 } from './layout-persist.ts'
+import { teardownNativeShell, type ShellTeardown } from './native-shell.ts'
+import type { NativeAdopter, NativeRegion, QueryRoot } from './native-regions.ts'
 import { StatusBadge } from './status-badge.tsx'
 import { ConflictDialog } from './conflict-dialog.tsx'
 import type { ConflictEntry } from './conflict-detect.ts'
 import type { Translate } from './locales.ts'
 
-/** Dockview panel shape this file pokes (params mirror for the collapse flag). */
+/** Dockview panel shape this file pokes (params mirror the collapse flag). */
 interface PanelWithParams {
   id?: string
   params?: Record<string, unknown>
-  api?: { updateParameters?: (p: Record<string, unknown>) => void }
+  api?: {
+    updateParameters?: (p: Record<string, unknown>) => void
+    close?: () => void
+  }
 }
 
-/** Write the collapse flag into a panel so `toJSON()` carries it. */
-function writePanelCollapsed(api: DockviewApi, component: string, collapsed: boolean): void {
-  const panel = (api as unknown as { getPanel?: (id: string) => PanelWithParams | undefined }).getPanel?.(component)
+/** The subset of `DockviewApi` this file mutates panels through. */
+interface PanelHost {
+  panels?: readonly PanelWithParams[]
+  getPanel?: (id: string) => PanelWithParams | undefined
+  addPanel?: (options: Record<string, unknown>) => PanelWithParams | undefined
+  removePanel?: (panel: PanelWithParams) => void
+}
+
+function panelsOf(api: DockviewApi): readonly PanelWithParams[] {
+  return (api as unknown as PanelHost).panels ?? []
+}
+
+/** Dockview panel id for a discovered region (`params.regionId`). */
+function panelRegionId(panel: PanelWithParams): PanelId | undefined {
+  return panel.id ?? regionIdOfParams(panel.params)
+}
+
+/** Write the collapse flag into one panel so `toJSON()` carries it. */
+function writePanelCollapsed(api: DockviewApi, regionId: PanelId, collapsed: boolean): void {
+  const panel = (api as unknown as PanelHost).getPanel?.(regionId)
   if (!panel) return
-  const next = { ...(panel.params ?? {}), collapsed }
-  if (typeof panel.api?.updateParameters === 'function') {
-    panel.api.updateParameters(next)
-  } else {
-    panel.params = next
-  }
+  const next = { ...(panel.params ?? {}), regionId, collapsed }
+  if (typeof panel.api?.updateParameters === 'function') panel.api.updateParameters(next)
+  else panel.params = next
 }
 
 /** Mirror a whole collapsed map into every panel's params. */
-function syncCollapsedToParams(api: DockviewApi, collapsed: Record<string, boolean>): void {
-  for (const id of PANEL_IDS) {
-    writePanelCollapsed(api, PANEL_META[id].component, collapsed[id] === true)
+function syncCollapsedToParams(api: DockviewApi, collapsed: Readonly<Record<string, boolean>>): void {
+  for (const panel of panelsOf(api)) {
+    const regionId = panelRegionId(panel)
+    if (regionId !== undefined) writePanelCollapsed(api, regionId, collapsed[regionId] === true)
   }
-}
-
-/** Read the panel id out of a dockview panel's params. */
-function panelIdFromParams(params: Record<string, unknown> | undefined): PanelId | undefined {
-  const id = params?.panelId
-  return typeof id === 'string' && id in PANEL_META ? (id as PanelId) : undefined
 }
 
 /** Initial collapsed map: config defaults, overlaid by any saved snapshot. */
-function initCollapsed(config: PsPanelsConfig, persisted: PersistedLayout | null): Record<string, boolean> {
+function initCollapsed(
+  regions: readonly NativeRegion[],
+  config: PsPanelsConfig,
+  persisted: PersistedLayout | null,
+): Record<string, boolean> {
   const map: Record<string, boolean> = {}
-  for (const id of PANEL_IDS) map[id] = false
+  for (const region of regions) map[region.id] = false
   for (const id of config.collapsedPanels) map[id] = true
   if (persisted?.collapsed && typeof persisted.collapsed === 'object') {
     for (const [key, value] of Object.entries(persisted.collapsed)) {
-      if (key in map) map[key] = value === true
+      map[key] = value === true
     }
   }
   return map
+}
+
+/**
+ * Make the panel set agree with the discovered regions: a region without a
+ * panel gets one (next to its own column when possible), and a panel whose
+ * region the host removed is closed. Without this, a region would either be
+ * invisible or be hidden inside the collapsed skeleton with nowhere to live.
+ */
+function syncPanels(
+  api: DockviewApi,
+  regions: readonly NativeRegion[],
+  collapsed: Readonly<Record<string, boolean>>,
+): void {
+  if (regions.length === 0) return
+  const host = api as unknown as PanelHost
+  const existing = new Map<string, PanelWithParams>()
+  for (const panel of panelsOf(api)) {
+    const regionId = panelRegionId(panel)
+    if (regionId !== undefined) existing.set(regionId, panel)
+  }
+
+  for (const [regionId, panel] of [...existing]) {
+    if (regions.some((region) => region.id === regionId)) continue
+    existing.delete(regionId)
+    try {
+      if (typeof host.removePanel === 'function') host.removePanel(panel)
+      else panel.api?.close?.()
+    } catch (error) {
+      console.warn(`[dsh-ps-floating-panels] closing the panel for a gone region failed (${regionId})`, error)
+    }
+  }
+
+  for (const region of regions) {
+    if (existing.has(region.id)) continue
+    const sameColumn = regions.find((other) => other.column === region.column && existing.has(other.id))
+    const reference = sameColumn?.id ?? existing.keys().next().value
+    try {
+      const added = host.addPanel?.({
+        id: region.id,
+        component: NATIVE_COMPONENT,
+        title: region.title,
+        params: { regionId: region.id, collapsed: collapsed[region.id] === true },
+        position: reference === undefined
+          ? undefined
+          : { referencePanel: reference, direction: sameColumn === undefined ? 'right' : 'within' },
+      }) as PanelWithParams | undefined
+      if (added !== undefined && added !== null) existing.set(region.id, added)
+    } catch (error) {
+      console.warn(`[dsh-ps-floating-panels] adding a panel for a new region failed (${region.id})`, error)
+    }
+  }
 }
 
 /** Count floating panels for the badge. */
@@ -125,6 +205,8 @@ export interface PsFloatingPanelsAppProps {
   readonly t: Translate
   /** LIVE config source — settings edits re-render without a restart. */
   readonly configSource: ConfigSource
+  /** Discovery + adoption engine shared with the plugin entry / page bridge. */
+  readonly adopter: NativeAdopter
   /** Optional host bridge for layout persistence (ctx.config-backed). */
   readonly host?: LayoutHostBridge
   /** Boot-time conflicts discovered by the plugin entry (rendered as a dialog). */
@@ -134,34 +216,66 @@ export interface PsFloatingPanelsAppProps {
 /**
  * The panel system root. Mounted once into `shell.overlay` by the plugin entry.
  */
-export function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }: PsFloatingPanelsAppProps): ReactElement | null {
-  // Subscribe to the live config: a `showStatusBadge`/`enabled`/width edit
-  // re-renders immediately (requirement: no restart). `config` below is the
-  // current snapshot on every render.
+export function PsFloatingPanelsApp({ t, configSource, adopter, host, conflicts = [] }: PsFloatingPanelsAppProps): ReactElement | null {
   const config: PsPanelsConfig = useSyncExternalStore(
     useCallback((cb) => configSource.subscribe(cb), [configSource]),
     () => configSource.getSnapshot(),
     () => configSource.getSnapshot(),
   )
+  const regions = useSyncExternalStore(
+    useCallback((cb) => adopter.subscribe(cb), [adopter]),
+    () => adopter.regions(),
+    () => adopter.regions(),
+  )
   const isDesktop = useDesktopViewport(config.minDesktopWidth)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const apiRef = useRef<DockviewApi | null>(null)
   const dirtyRef = useRef(false)
   const collapsedRef = useRef<Record<string, boolean>>({})
+  const regionsRef = useRef<readonly NativeRegion[]>(regions)
+  regionsRef.current = regions
+
+  const [dockReady, setDockReady] = useState(false)
+  const [adopted, setAdopted] = useState<boolean>(() => config.nativeAdopt && readNativeAdopted())
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => initCollapsed(regions, config, null))
+  collapsedRef.current = collapsed
+  const [plateFloating, setPlateFloating] = useState(0)
+  const [conflictDismissed, setConflictDismissed] = useState(false)
+
+  const components = useMemo(() => buildDockviewComponents(), [])
 
   const persistence = useMemo<LayoutPersistence>(() => createLayoutPersistence({
     api: () => apiRef.current ?? undefined,
+    regions: () => regionsRef.current.map((region) => ({ id: region.id, title: region.title, column: region.column })),
     host,
     debounceMs: config.persistDebounceMs,
   }), [host, config.persistDebounceMs])
 
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => initCollapsed(config, persistence.loadLocal()))
-  collapsedRef.current = collapsed
+  const setAdoptedPersisted = useCallback((next: boolean): void => {
+    setAdopted(next)
+    writeNativeAdopted(next)
+  }, [])
 
-  const [plateFloating, setPlateFloating] = useState(0)
-  const [conflictDismissed, setConflictDismissed] = useState(false)
-  const [replacedHostMain, setReplacedHostMain] = useState(false)
+  /** A settings edit can switch the mode off under us. */
+  useEffect(() => {
+    if (!config.nativeAdopt) setAdopted(false)
+  }, [config.nativeAdopt])
 
-  const components = useMemo(() => buildDockviewComponents(), [])
+  /** First sync of the panel set with the discovered regions. */
+  useEffect(() => {
+    const seeded = initCollapsed(regions, config, persistence.loadLocal())
+    collapsedRef.current = { ...seeded, ...collapsedRef.current }
+    setCollapsed(collapsedRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the region set matters here
+  }, [regions])
+
+  /** Keep the panel set in step with regions the host adds/removes later. */
+  useEffect(() => {
+    const api = apiRef.current
+    if (!api || !dockReady) return
+    syncPanels(api, regions, collapsedRef.current)
+    setPlateFloating(floatingCount(apiRef.current ?? undefined))
+  }, [regions, dockReady])
 
   /** Refresh badge counts after any layout mutation. */
   const refreshDerived = useCallback((): void => {
@@ -180,20 +294,38 @@ export function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }: P
     const api = event.api
     apiRef.current = api
 
-    // Local snapshot first (synchronous), then a host snapshot if it is newer.
     const local = persistence.loadLocal()
-    applyLayout(api as unknown as Parameters<typeof applyLayout>[0], local)
+    applyLayout(
+      api as unknown as Parameters<typeof applyLayout>[0],
+      local,
+      regionsRef.current.map((region) => ({ id: region.id, title: region.title, column: region.column })),
+    )
+    if (local === null || local.version !== 2) {
+      const seeded = initCollapsed(regionsRef.current, config, local)
+      collapsedRef.current = seeded
+      setCollapsed(seeded)
+    } else {
+      const seeded = initCollapsed(regionsRef.current, config, local)
+      collapsedRef.current = { ...seeded, ...local.collapsed, ...collapsedRef.current }
+      setCollapsed(collapsedRef.current)
+    }
     syncCollapsedToParams(api, collapsedRef.current)
+    syncPanels(api, regionsRef.current, collapsedRef.current)
 
     void persistence.load().then((remote) => {
       if (!remote || dirtyRef.current) return
       const localStamp = local?.updatedAt ?? 0
       if (remote.updatedAt > localStamp) {
-        applyLayout(api as unknown as Parameters<typeof applyLayout>[0], remote)
-        const next = initCollapsed(config, remote)
+        applyLayout(
+          api as unknown as Parameters<typeof applyLayout>[0],
+          remote,
+          regionsRef.current.map((region) => ({ id: region.id, title: region.title, column: region.column })),
+        )
+        const next = { ...initCollapsed(regionsRef.current, config, remote), ...remote.collapsed }
         collapsedRef.current = next
         setCollapsed(next)
         syncCollapsedToParams(api, next)
+        syncPanels(api, regionsRef.current, next)
         refreshDerived()
       }
     })
@@ -203,16 +335,17 @@ export function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }: P
     if (typeof addSub === 'function') {
       addSub.call(api, () => syncCollapsedToParams(api, collapsedRef.current))
     }
+    setDockReady(true)
     refreshDerived()
   }, [persistence, config, onLayoutChanged, refreshDerived])
 
   /** Flip a panel's collapsed flag and mirror it into Dockview params. */
-  const toggleCollapse = useCallback((panelId: PanelId): void => {
-    const next = { ...collapsedRef.current, [panelId]: !collapsedRef.current[panelId] }
+  const toggleCollapse = useCallback((regionId: PanelId): void => {
+    const next = { ...collapsedRef.current, [regionId]: !collapsedRef.current[regionId] }
     collapsedRef.current = next
     setCollapsed(next)
     const api = apiRef.current
-    if (api) writePanelCollapsed(api, PANEL_META[panelId].component, next[panelId])
+    if (api) writePanelCollapsed(api, regionId, next[regionId])
     dirtyRef.current = true
     persistence.scheduleSave()
   }, [persistence])
@@ -220,10 +353,12 @@ export function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }: P
   /** Reset: default split layout, every panel expanded, snapshot rewritten. */
   const resetLayout = useCallback((): void => {
     const next: Record<string, boolean> = {}
-    for (const id of PANEL_IDS) next[id] = false
+    for (const region of regionsRef.current) next[region.id] = false
     collapsedRef.current = next
     setCollapsed(next)
     persistence.reset()
+    const api = apiRef.current
+    if (api) syncCollapsedToParams(api, next)
     dirtyRef.current = true
     refreshDerived()
   }, [persistence, refreshDerived])
@@ -231,7 +366,7 @@ export function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }: P
   /** Expand every panel without touching the grid. */
   const expandAll = useCallback((): void => {
     const next: Record<string, boolean> = {}
-    for (const id of PANEL_IDS) next[id] = false
+    for (const region of regionsRef.current) next[region.id] = false
     collapsedRef.current = next
     setCollapsed(next)
     const api = apiRef.current
@@ -240,76 +375,115 @@ export function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }: P
     persistence.scheduleSave()
   }, [persistence])
 
-  // Best-effort "replace" mode: hide the host's main region while the split is
-  // active, and restore it on cleanup. Overlay mode (default) never touches it.
+  /** Ask the host for new regions (e.g. a pane opened since we scanned). */
+  const rescan = useCallback((): void => {
+    adopter.refresh()
+  }, [adopter])
+
+  /** Put every real node back and leave the native layout exactly as it was. */
+  const restoreNative = useCallback((): void => {
+    setAdoptedPersisted(false)
+  }, [setAdoptedPersisted])
+
+  // Collapse the empty native skeleton only while we are actually hosting the
+  // real regions. Nothing is hidden until at least one region was adopted, so a
+  // failed adoption can never make the host's UI disappear.
   useEffect(() => {
-    if (!isDesktop || !config.enabled || config.layoutMode !== 'replace') return
-    if (typeof document === 'undefined') return
-    const main = document.querySelector('main')
-    if (!(main instanceof HTMLElement)) return
-    const previous = main.getAttribute('data-ps-replaced')
-    main.setAttribute('data-ps-replaced', 'true')
-    setReplacedHostMain(true)
-    return () => {
-      if (previous === null) main.removeAttribute('data-ps-replaced')
-      else main.setAttribute('data-ps-replaced', previous)
-      setReplacedHostMain(false)
-    }
-  }, [isDesktop, config.enabled, config.layoutMode])
+    const active = adopted && isDesktop && config.enabled && dockReady
+    if (!active || typeof document === 'undefined') return
+    if (regions.length > 0 && adopter.adopted().length === 0) return
+    const teardown = teardownNativeShell(document as unknown as QueryRoot, rootRef.current)
+    return () => teardown?.restore()
+  }, [adopted, isDesktop, config.enabled, dockReady, regions, adopter])
 
   // Hard gates: disabled, or a mobile viewport → render nothing at all.
   if (!config.enabled) return null
   if (!isDesktop) return null
 
-  const ctx: PsPanelsContextValue = { t, collapsed, toggleCollapse }
-  const collapsedCount = PANEL_IDS.filter((id) => collapsed[id] === true).length
+  const ctx: PsPanelsContextValue = {
+    t,
+    collapsed,
+    toggleCollapse,
+    regions,
+    regionOf: (regionId) => adopter.region(regionId),
+    adopter,
+  }
+  const collapsedCount = regions.filter((region) => collapsed[region.id] === true).length
 
   return (
     <div
       className="ps-floating-root"
       data-ps-floating-panels="true"
-      data-layout-mode={config.layoutMode}
-      data-host-main-replaced={replacedHostMain ? 'true' : undefined}
+      data-native={adopted ? 'adopted' : 'restored'}
+      ref={rootRef}
     >
       <PsPanelsProvider value={ctx}>
-        <section className="ps-dock-shell" aria-label={t('ui.launcher')}>
-          <header className="ps-dock-toolbar">
-            <span className="ps-dock-toolbar__title">{t('ui.launcher')}</span>
-            <span className="ps-dock-toolbar__hint" title={t('ui.dockHint')}>{t('ui.dockHint')}</span>
-            <span className="ps-dock-toolbar__actions">
-              {config.showLauncher ? (
-                <>
-                  <button type="button" className="ps-dock-btn" data-ps-action="expand-all" onClick={expandAll}>
-                    {t('ui.showAll')}
-                  </button>
-                  <button type="button" className="ps-dock-btn" data-ps-action="reset" title={t('ui.resetTitle')} onClick={resetLayout}>
-                    {t('ui.reset')}
-                  </button>
-                </>
-              ) : null}
-            </span>
-          </header>
-          <div className="ps-dock-surface">
-            <DockviewReact
-              components={components}
-              defaultTabComponent={PsDefaultTab}
-              onReady={onReady}
-              floatingGroupBounds="boundedWithinViewport"
-              disableFloatingGroups={false}
-              dndStrategy="auto"
-              proportionalLayout
-            />
-          </div>
-        </section>
+        {adopted ? (
+          <section className="ps-dock-shell" aria-label={t('ui.launcher')}>
+            <header className="ps-dock-toolbar">
+              <span className="ps-dock-toolbar__title">
+                {t('ui.launcher')} · {t('status.panelCount', { n: regions.length })}
+              </span>
+              <span className="ps-dock-toolbar__hint" title={t('ui.dockHint')}>{t('ui.dockHint')}</span>
+              <span className="ps-dock-toolbar__actions">
+                {config.showLauncher ? (
+                  <>
+                    <button type="button" className="ps-dock-btn" data-ps-action="rescan" title={t('ui.rescanTitle')} onClick={rescan}>
+                      {t('ui.rescan')}
+                    </button>
+                    <button type="button" className="ps-dock-btn" data-ps-action="expand-all" onClick={expandAll}>
+                      {t('ui.showAll')}
+                    </button>
+                    <button type="button" className="ps-dock-btn" data-ps-action="reset" title={t('ui.resetTitle')} onClick={resetLayout}>
+                      {t('ui.reset')}
+                    </button>
+                    <button
+                      type="button"
+                      className="ps-dock-btn"
+                      data-ps-action="restore-native"
+                      title={t('ui.restoreNativeTitle')}
+                      onClick={restoreNative}
+                    >
+                      {t('ui.restoreNative')}
+                    </button>
+                  </>
+                ) : null}
+              </span>
+            </header>
+            <div className="ps-dock-surface">
+              <DockviewReact
+                components={components}
+                defaultTabComponent={PsDefaultTab}
+                onReady={onReady}
+                floatingGroupBounds="boundedWithinViewport"
+                disableFloatingGroups={false}
+                dndStrategy="auto"
+                proportionalLayout
+              />
+            </div>
+          </section>
+        ) : (
+          <button
+            type="button"
+            className="ps-launcher-pill"
+            data-ps-action="adopt-native"
+            title={t('ui.adoptNativeTitle')}
+            onClick={() => setAdoptedPersisted(true)}
+          >
+            {t('ui.adoptNative')}
+          </button>
+        )}
       </PsPanelsProvider>
 
-      <StatusBadge
-        show={config.showStatusBadge}
-        panelCount={PANEL_IDS.length}
-        collapsedCount={collapsedCount}
-        floatingCount={plateFloating}
-        t={t}
-      />
+      {adopted ? (
+        <StatusBadge
+          show={config.showStatusBadge}
+          panelCount={regions.length}
+          collapsedCount={collapsedCount}
+          floatingCount={plateFloating}
+          t={t}
+        />
+      ) : null}
 
       {!conflictDismissed ? (
         <ConflictDialog conflicts={conflicts} t={t} onDismiss={() => setConflictDismissed(true)} />

@@ -1,7 +1,7 @@
 {
  "inputs": {
   "client/config.ts": {
-   "bytes": 6611,
+   "bytes": 6787,
    "imports": [],
    "format": "esm"
   },
@@ -47,29 +47,8 @@
    ],
    "format": "esm"
   },
-  "client/portal-proxy.tsx": {
-   "bytes": 6012,
-   "imports": [
-    {
-     "path": "react",
-     "kind": "import-statement",
-     "external": true
-    },
-    {
-     "path": "react-dom",
-     "kind": "import-statement",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "import-statement",
-     "external": true
-    }
-   ],
-   "format": "esm"
-  },
   "client/panels/panel-shell.tsx": {
-   "bytes": 4461,
+   "bytes": 3635,
    "imports": [
     {
      "path": "react",
@@ -77,11 +56,6 @@
      "external": true
     },
     {
-     "path": "client/portal-proxy.tsx",
-     "kind": "import-statement",
-     "original": "../portal-proxy.tsx"
-    },
-    {
      "path": "react/jsx-runtime",
      "kind": "import-statement",
      "external": true
@@ -89,105 +63,14 @@
    ],
    "format": "esm"
   },
-  "client/panels/ConversationPanel.tsx": {
-   "bytes": 822,
+  "client/panels/NativeRegionPanel.tsx": {
+   "bytes": 2662,
    "imports": [
     {
-     "path": "client/panels/panel-shell.tsx",
-     "kind": "import-statement",
-     "original": "./panel-shell.tsx"
-    },
-    {
-     "path": "react/jsx-runtime",
+     "path": "react",
      "kind": "import-statement",
      "external": true
-    }
-   ],
-   "format": "esm"
-  },
-  "client/panels/ConversationTreePanel.tsx": {
-   "bytes": 730,
-   "imports": [
-    {
-     "path": "client/panels/panel-shell.tsx",
-     "kind": "import-statement",
-     "original": "./panel-shell.tsx"
     },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "import-statement",
-     "external": true
-    }
-   ],
-   "format": "esm"
-  },
-  "client/panels/CodePreviewPanel.tsx": {
-   "bytes": 622,
-   "imports": [
-    {
-     "path": "client/panels/panel-shell.tsx",
-     "kind": "import-statement",
-     "original": "./panel-shell.tsx"
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "import-statement",
-     "external": true
-    }
-   ],
-   "format": "esm"
-  },
-  "client/panels/ComposerPanel.tsx": {
-   "bytes": 737,
-   "imports": [
-    {
-     "path": "client/panels/panel-shell.tsx",
-     "kind": "import-statement",
-     "original": "./panel-shell.tsx"
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "import-statement",
-     "external": true
-    }
-   ],
-   "format": "esm"
-  },
-  "client/panels/WorkspacePanel.tsx": {
-   "bytes": 601,
-   "imports": [
-    {
-     "path": "client/panels/panel-shell.tsx",
-     "kind": "import-statement",
-     "original": "./panel-shell.tsx"
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "import-statement",
-     "external": true
-    }
-   ],
-   "format": "esm"
-  },
-  "client/panels/CodeTreePanel.tsx": {
-   "bytes": 586,
-   "imports": [
-    {
-     "path": "client/panels/panel-shell.tsx",
-     "kind": "import-statement",
-     "original": "./panel-shell.tsx"
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "import-statement",
-     "external": true
-    }
-   ],
-   "format": "esm"
-  },
-  "client/panels/AgentTeamPanel.tsx": {
-   "bytes": 805,
-   "imports": [
     {
      "path": "client/panels/panel-shell.tsx",
      "kind": "import-statement",
@@ -202,7 +85,7 @@
    "format": "esm"
   },
   "client/panels/registry.tsx": {
-   "bytes": 2309,
+   "bytes": 1032,
    "imports": [
     {
      "path": "client/config.ts",
@@ -210,51 +93,16 @@
      "original": "../config.ts"
     },
     {
-     "path": "client/panels/ConversationPanel.tsx",
+     "path": "client/panels/NativeRegionPanel.tsx",
      "kind": "import-statement",
-     "original": "./ConversationPanel.tsx"
-    },
-    {
-     "path": "client/panels/ConversationTreePanel.tsx",
-     "kind": "import-statement",
-     "original": "./ConversationTreePanel.tsx"
-    },
-    {
-     "path": "client/panels/CodePreviewPanel.tsx",
-     "kind": "import-statement",
-     "original": "./CodePreviewPanel.tsx"
-    },
-    {
-     "path": "client/panels/ComposerPanel.tsx",
-     "kind": "import-statement",
-     "original": "./ComposerPanel.tsx"
-    },
-    {
-     "path": "client/panels/WorkspacePanel.tsx",
-     "kind": "import-statement",
-     "original": "./WorkspacePanel.tsx"
-    },
-    {
-     "path": "client/panels/CodeTreePanel.tsx",
-     "kind": "import-statement",
-     "original": "./CodeTreePanel.tsx"
-    },
-    {
-     "path": "client/panels/AgentTeamPanel.tsx",
-     "kind": "import-statement",
-     "original": "./AgentTeamPanel.tsx"
+     "original": "./NativeRegionPanel.tsx"
     }
    ],
    "format": "esm"
   },
   "client/panels/tabs.tsx": {
-   "bytes": 3492,
+   "bytes": 2663,
    "imports": [
-    {
-     "path": "client/config.ts",
-     "kind": "import-statement",
-     "original": "../config.ts"
-    },
     {
      "path": "client/panels/panel-shell.tsx",
      "kind": "import-statement",
@@ -269,12 +117,28 @@
    "format": "esm"
   },
   "client/layout-persist.ts": {
-   "bytes": 11732,
+   "bytes": 13246,
    "imports": [
     {
      "path": "client/config.ts",
      "kind": "import-statement",
      "original": "./config.ts"
+    }
+   ],
+   "format": "esm"
+  },
+  "client/native-regions.ts": {
+   "bytes": 19648,
+   "imports": [],
+   "format": "esm"
+  },
+  "client/native-shell.ts": {
+   "bytes": 4829,
+   "imports": [
+    {
+     "path": "client/native-regions.ts",
+     "kind": "import-statement",
+     "original": "./native-regions.ts"
     }
    ],
    "format": "esm"
@@ -302,7 +166,7 @@
    "format": "esm"
   },
   "client/PsFloatingPanelsApp.tsx": {
-   "bytes": 12772,
+   "bytes": 19766,
    "imports": [
     {
      "path": "react",
@@ -338,6 +202,11 @@
      "path": "client/layout-persist.ts",
      "kind": "import-statement",
      "original": "./layout-persist.ts"
+    },
+    {
+     "path": "client/native-shell.ts",
+     "kind": "import-statement",
+     "original": "./native-shell.ts"
     },
     {
      "path": "client/status-badge.tsx",
@@ -379,12 +248,12 @@
    "format": "esm"
   },
   "client/theme-css.ts": {
-   "bytes": 5504,
+   "bytes": 5671,
    "imports": [],
    "format": "esm"
   },
   "client/inject-css.ts": {
-   "bytes": 6788,
+   "bytes": 7897,
    "imports": [
     {
      "path": "client/dockview-base.ts",
@@ -400,12 +269,23 @@
    "format": "esm"
   },
   "client/locales.ts": {
-   "bytes": 5069,
+   "bytes": 5407,
    "imports": [],
    "format": "esm"
   },
+  "client/host-bridge.ts": {
+   "bytes": 6037,
+   "imports": [
+    {
+     "path": "client/layout-persist.ts",
+     "kind": "import-statement",
+     "original": "./layout-persist.ts"
+    }
+   ],
+   "format": "esm"
+  },
   "client/index.tsx": {
-   "bytes": 15791,
+   "bytes": 20338,
    "imports": [
     {
      "path": "client/config.ts",
@@ -438,9 +318,19 @@
      "original": "./locales.ts"
     },
     {
+     "path": "client/host-bridge.ts",
+     "kind": "import-statement",
+     "original": "./host-bridge.ts"
+    },
+    {
      "path": "client/layout-persist.ts",
      "kind": "import-statement",
      "original": "./layout-persist.ts"
+    },
+    {
+     "path": "client/native-regions.ts",
+     "kind": "import-statement",
+     "original": "./native-regions.ts"
     },
     {
      "path": "client/config.ts",
@@ -485,46 +375,6 @@
      "external": true
     },
     {
-     "path": "react-dom",
-     "kind": "require-call",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "require-call",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "require-call",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "require-call",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "require-call",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "require-call",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "require-call",
-     "external": true
-    },
-    {
-     "path": "react/jsx-runtime",
-     "kind": "require-call",
-     "external": true
-    },
-    {
      "path": "react/jsx-runtime",
      "kind": "require-call",
      "external": true
@@ -564,13 +414,13 @@
    "entryPoint": "client/index.tsx",
    "inputs": {
     "client/index.tsx": {
-     "bytesInOutput": 7143
+     "bytesInOutput": 9509
     },
     "client/config.ts": {
-     "bytesInOutput": 2117
+     "bytesInOutput": 2011
     },
     "client/PsFloatingPanelsApp.tsx": {
-     "bytesInOutput": 8772
+     "bytesInOutput": 13936
     },
     "../../new1.2/node_modules/dockview-core/dist/package/main.esm.mjs": {
      "bytesInOutput": 770303
@@ -578,47 +428,32 @@
     "../../new1.2/node_modules/dockview-react/dist/package/main.esm.mjs": {
      "bytesInOutput": 29754
     },
+    "client/panels/NativeRegionPanel.tsx": {
+     "bytesInOutput": 2049
+    },
     "client/panels/panel-shell.tsx": {
-     "bytesInOutput": 1502
-    },
-    "client/portal-proxy.tsx": {
-     "bytesInOutput": 2991
-    },
-    "client/panels/ConversationPanel.tsx": {
-     "bytesInOutput": 258
-    },
-    "client/panels/ConversationTreePanel.tsx": {
-     "bytesInOutput": 277
-    },
-    "client/panels/CodePreviewPanel.tsx": {
-     "bytesInOutput": 257
-    },
-    "client/panels/ComposerPanel.tsx": {
-     "bytesInOutput": 242
-    },
-    "client/panels/WorkspacePanel.tsx": {
-     "bytesInOutput": 246
-    },
-    "client/panels/CodeTreePanel.tsx": {
-     "bytesInOutput": 245
-    },
-    "client/panels/AgentTeamPanel.tsx": {
-     "bytesInOutput": 249
+     "bytesInOutput": 958
     },
     "client/panels/registry.tsx": {
-     "bytesInOutput": 456
+     "bytesInOutput": 91
     },
     "client/panels/tabs.tsx": {
-     "bytesInOutput": 1922
+     "bytesInOutput": 1617
     },
     "client/layout-persist.ts": {
-     "bytesInOutput": 5627
+     "bytesInOutput": 6022
+    },
+    "client/native-regions.ts": {
+     "bytesInOutput": 10307
+    },
+    "client/native-shell.ts": {
+     "bytesInOutput": 2314
     },
     "client/status-badge.tsx": {
-     "bytesInOutput": 1366
+     "bytesInOutput": 1361
     },
     "client/conflict-dialog.tsx": {
-     "bytesInOutput": 1611
+     "bytesInOutput": 1599
     },
     "client/conflict-detect.ts": {
      "bytesInOutput": 1839
@@ -630,16 +465,19 @@
      "bytesInOutput": 155390
     },
     "client/theme-css.ts": {
-     "bytesInOutput": 5398
+     "bytesInOutput": 5568
     },
     "client/inject-css.ts": {
-     "bytesInOutput": 4667
+     "bytesInOutput": 5662
     },
     "client/locales.ts": {
-     "bytesInOutput": 4459
+     "bytesInOutput": 5055
+    },
+    "client/host-bridge.ts": {
+     "bytesInOutput": 2424
     }
    },
-   "bytes": 1012415
+   "bytes": 1032924
   }
  }
 }

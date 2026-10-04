@@ -46,50 +46,53 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 
 // client/config.ts
-var PANEL_IDS = [
-  "conversation",
-  "conversation-tree",
-  "code-preview",
-  "composer",
-  "workspace",
-  "code-tree",
-  "agent-team"
-];
-var PANEL_META = {
-  conversation: { id: "conversation", component: "ps.panel.conversation", titleKey: "panel.conversation" },
-  "conversation-tree": { id: "conversation-tree", component: "ps.panel.conversationTree", titleKey: "panel.conversationTree" },
-  "code-preview": { id: "code-preview", component: "ps.panel.codePreview", titleKey: "panel.codePreview" },
-  composer: { id: "composer", component: "ps.panel.composer", titleKey: "panel.composer" },
-  workspace: { id: "workspace", component: "ps.panel.workspace", titleKey: "panel.workspace" },
-  "code-tree": { id: "code-tree", component: "ps.panel.codeTree", titleKey: "panel.codeTree" },
-  "agent-team": { id: "agent-team", component: "ps.panel.agentTeam", titleKey: "panel.agentTeam" }
-};
-var LAYOUT_VERSION = 1;
+var NATIVE_COMPONENT = "ps.panel.native";
+var NATIVE_ADOPTED_KEY = "dsh-ps-floating-panels:native-adopted";
+var LAYOUT_VERSION = 2;
 var DEFAULT_CONFIG = {
   enabled: true,
+  nativeAdopt: true,
   showLauncher: true,
   showStatusBadge: true,
   minDesktopWidth: 768,
-  layoutMode: "overlay",
   persistDebounceMs: 250,
   collapsedPanels: [],
   autoHideOnHover: false
 };
+var PANEL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 function normalizeConfig(raw) {
   const r = raw ?? {};
   const bool = (v, d) => typeof v === "boolean" ? v : d;
   const num = (v, d) => typeof v === "number" && Number.isFinite(v) && v > 0 ? v : d;
-  const collapsed = Array.isArray(r.collapsedPanels) ? r.collapsedPanels.filter((id) => typeof id === "string" && PANEL_IDS.includes(id)) : DEFAULT_CONFIG.collapsedPanels;
+  const collapsed = Array.isArray(r.collapsedPanels) ? r.collapsedPanels.filter((id) => typeof id === "string" && PANEL_ID_PATTERN.test(id)) : DEFAULT_CONFIG.collapsedPanels;
   return {
     enabled: bool(r.enabled, DEFAULT_CONFIG.enabled),
+    nativeAdopt: bool(r.nativeAdopt, DEFAULT_CONFIG.nativeAdopt),
     showLauncher: bool(r.showLauncher, DEFAULT_CONFIG.showLauncher),
     showStatusBadge: bool(r.showStatusBadge, DEFAULT_CONFIG.showStatusBadge),
     minDesktopWidth: num(r.minDesktopWidth, DEFAULT_CONFIG.minDesktopWidth),
-    layoutMode: r.layoutMode === "replace" ? "replace" : "overlay",
     persistDebounceMs: typeof r.persistDebounceMs === "number" && r.persistDebounceMs >= 0 ? r.persistDebounceMs : DEFAULT_CONFIG.persistDebounceMs,
     collapsedPanels: collapsed,
     autoHideOnHover: bool(r.autoHideOnHover, DEFAULT_CONFIG.autoHideOnHover)
   };
+}
+function readNativeAdopted(store, fallback = true) {
+  const target = store === void 0 ? typeof localStorage === "undefined" ? null : localStorage : store;
+  if (target === null) return fallback;
+  try {
+    const raw = target.getItem(NATIVE_ADOPTED_KEY);
+    return raw === null ? fallback : raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+function writeNativeAdopted(adopted, store) {
+  const target = store === void 0 ? typeof localStorage === "undefined" ? null : localStorage : store;
+  if (target === null) return;
+  try {
+    target.setItem(NATIVE_ADOPTED_KEY, adopted ? "true" : "false");
+  } catch {
+  }
 }
 
 // client/PsFloatingPanelsApp.tsx
@@ -19278,208 +19281,98 @@ var PaneviewReact = import_react.default.forwardRef((props, ref) => {
 });
 PaneviewReact.displayName = "PaneviewComponent";
 
-// client/panels/panel-shell.tsx
+// client/panels/NativeRegionPanel.tsx
 var import_react3 = require("react");
 
-// client/portal-proxy.tsx
-var import_react2 = require("react");
-var import_react_dom2 = require("react-dom");
-var import_jsx_runtime = require("react/jsx-runtime");
-var NATIVE_PANELS_GLOBAL = "__DSH_NATIVE_PANELS__";
-function getNativePanelsBridge(win = typeof window === "undefined" ? void 0 : window) {
-  if (!win || typeof win !== "object") return null;
-  const bridge = win[NATIVE_PANELS_GLOBAL];
-  if (!bridge || typeof bridge !== "object") return null;
-  if (typeof bridge.getElement !== "function") return null;
-  return bridge;
-}
-function isDomNode(value) {
-  return !!value && typeof value === "object" && typeof value.nodeType === "number";
-}
-function Placeholder({ panelId, t }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "ps-proxy-placeholder", "data-ps-placeholder": panelId, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ps-proxy-placeholder__title", children: t("proxy.placeholderTitle") }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ps-proxy-placeholder__body", children: t("proxy.placeholderBody", { panelId }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ps-proxy-placeholder__hint", children: t("proxy.placeholderHint") })
-  ] });
-}
-function PortalPanel({ panelId, t }) {
-  const [bridge, setBridge] = (0, import_react2.useState)(() => getNativePanelsBridge());
-  const [content, setContent] = (0, import_react2.useState)(null);
-  const [container, setContainer] = (0, import_react2.useState)(null);
-  (0, import_react2.useEffect)(() => {
-    if (bridge) return;
-    const tick = () => {
-      const found = getNativePanelsBridge();
-      if (found) setBridge(found);
-    };
-    tick();
-    const interval = setInterval(tick, 500);
-    return () => clearInterval(interval);
-  }, [bridge]);
-  (0, import_react2.useEffect)(() => {
-    if (!bridge) {
-      setContent(null);
-      return;
-    }
-    const resolve = () => {
-      try {
-        setContent(bridge.getElement(panelId) ?? null);
-      } catch (err) {
-        console.warn("[dsh-ps-floating-panels] native bridge getElement threw", err);
-        setContent(null);
-      }
-    };
-    resolve();
-    if (typeof bridge.subscribe === "function") {
-      try {
-        return bridge.subscribe(resolve);
-      } catch {
-        return;
-      }
-    }
-    return;
-  }, [bridge, panelId]);
-  (0, import_react2.useEffect)(() => {
-    if (!container || !isDomNode(content)) return;
-    const node = content;
-    container.replaceChildren(node);
-    return () => {
-      if (node.parentNode === container) container.removeChild(node);
-    };
-  }, [container, content]);
-  if (!bridge || content == null) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Placeholder, { panelId, t });
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "ps-proxy", ref: setContainer, "data-ps-proxy": panelId, children: container && !isDomNode(content) ? (0, import_react_dom2.createPortal)(content, container) : null });
-}
-
 // client/panels/panel-shell.tsx
-var import_jsx_runtime2 = require("react/jsx-runtime");
-var PsPanelsContext = (0, import_react3.createContext)(null);
+var import_react2 = require("react");
+var import_jsx_runtime = require("react/jsx-runtime");
+var PsPanelsContext = (0, import_react2.createContext)(null);
 var identity = (key) => key;
+var EMPTY_CONTEXT = {
+  t: identity,
+  collapsed: {},
+  toggleCollapse: () => {
+  },
+  regions: [],
+  regionOf: () => void 0,
+  adopter: null
+};
 function PsPanelsProvider({ value, children }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(PsPanelsContext.Provider, { value, children });
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PsPanelsContext.Provider, { value, children });
 }
 function usePsPanels() {
-  return (0, import_react3.useContext)(PsPanelsContext) ?? { t: identity, collapsed: {}, toggleCollapse: () => {
-  } };
+  return (0, import_react2.useContext)(PsPanelsContext) ?? EMPTY_CONTEXT;
 }
-function collapsedOf(ctx, props, panelId) {
-  if (Object.prototype.hasOwnProperty.call(ctx.collapsed, panelId)) return ctx.collapsed[panelId] === true;
+function regionIdFromProps(props) {
+  const value = props.params?.regionId ?? props.params?.panelId;
+  return typeof value === "string" && value.length > 0 ? value : void 0;
+}
+function collapsedOf(ctx, props, regionId) {
+  if (Object.prototype.hasOwnProperty.call(ctx.collapsed, regionId)) return ctx.collapsed[regionId] === true;
   return props.params?.collapsed === true;
 }
-function PanelFrame({ panelId, dockview, children }) {
+
+// client/panels/NativeRegionPanel.tsx
+var import_jsx_runtime2 = require("react/jsx-runtime");
+function NativeRegionPanel(props) {
   const ctx = usePsPanels();
-  const collapsed = collapsedOf(ctx, dockview, panelId);
-  const name2 = ctx.t(`panel.${camel(panelId)}`);
-  if (collapsed) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ps-panel-body", "data-collapsed": "true", "data-panel-id": panelId, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "ps-panel-hint", children: ctx.t("ui.expandPanel", { name: name2 }) }) });
+  const regionId = regionIdFromProps(props);
+  const region = regionId === void 0 ? void 0 : ctx.regionOf(regionId);
+  const collapsed = regionId === void 0 ? false : collapsedOf(ctx, props, regionId);
+  const [container, setContainer] = (0, import_react3.useState)(null);
+  const adopter = ctx.adopter;
+  (0, import_react3.useEffect)(() => {
+    if (container === null || adopter === null || regionId === void 0 || collapsed) return;
+    const adopted = adopter.attach(regionId, container);
+    if (!adopted) {
+      console.warn(`[dsh-ps-floating-panels] native region "${regionId}" could not be adopted`);
+    }
+    return () => {
+      adopter.detach(regionId);
+    };
+  }, [container, adopter, regionId, collapsed, region]);
+  if (regionId === void 0 || region === void 0) {
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "ps-panel-body ps-panel-missing", "data-region": regionId ?? "unknown", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ps-panel-missing__title", children: ctx.t("native.missingTitle") }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ps-panel-missing__body", children: ctx.t("native.missingBody", { regionId: regionId ?? "unknown" }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ps-panel-missing__hint", children: ctx.t("native.missingHint") })
+    ] });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ps-panel-body", "data-panel-id": panelId, children: children ?? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(PortalPanel, { panelId, t: ctx.t }) });
-}
-function camel(id) {
-  return id.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-}
-
-// client/panels/ConversationPanel.tsx
-var import_jsx_runtime3 = require("react/jsx-runtime");
-var CONVERSATION_PANEL_ID = "conversation";
-function ConversationPanel(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PanelFrame, { panelId: CONVERSATION_PANEL_ID, dockview: props });
-}
-
-// client/panels/ConversationTreePanel.tsx
-var import_jsx_runtime4 = require("react/jsx-runtime");
-var CONVERSATION_TREE_PANEL_ID = "conversation-tree";
-function ConversationTreePanel(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PanelFrame, { panelId: CONVERSATION_TREE_PANEL_ID, dockview: props });
-}
-
-// client/panels/CodePreviewPanel.tsx
-var import_jsx_runtime5 = require("react/jsx-runtime");
-var CODE_PREVIEW_PANEL_ID = "code-preview";
-function CodePreviewPanel(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(PanelFrame, { panelId: CODE_PREVIEW_PANEL_ID, dockview: props });
-}
-
-// client/panels/ComposerPanel.tsx
-var import_jsx_runtime6 = require("react/jsx-runtime");
-var COMPOSER_PANEL_ID = "composer";
-function ComposerPanel(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(PanelFrame, { panelId: COMPOSER_PANEL_ID, dockview: props });
-}
-
-// client/panels/WorkspacePanel.tsx
-var import_jsx_runtime7 = require("react/jsx-runtime");
-var WORKSPACE_PANEL_ID = "workspace";
-function WorkspacePanel(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(PanelFrame, { panelId: WORKSPACE_PANEL_ID, dockview: props });
-}
-
-// client/panels/CodeTreePanel.tsx
-var import_jsx_runtime8 = require("react/jsx-runtime");
-var CODE_TREE_PANEL_ID = "code-tree";
-function CodeTreePanel(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(PanelFrame, { panelId: CODE_TREE_PANEL_ID, dockview: props });
-}
-
-// client/panels/AgentTeamPanel.tsx
-var import_jsx_runtime9 = require("react/jsx-runtime");
-var AGENT_TEAM_PANEL_ID = "agent-team";
-function AgentTeamPanel(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(PanelFrame, { panelId: AGENT_TEAM_PANEL_ID, dockview: props });
+  if (collapsed) {
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ps-panel-body", "data-collapsed": "true", "data-region": regionId, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "ps-panel-hint", children: ctx.t("ui.expandPanel", { name: region.title }) }) });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "ps-panel-body ps-native-host", "data-region": regionId, ref: setContainer });
 }
 
 // client/panels/registry.tsx
-var PS_PANEL_COMPONENTS = {
-  conversation: ConversationPanel,
-  "conversation-tree": ConversationTreePanel,
-  "code-preview": CodePreviewPanel,
-  composer: ComposerPanel,
-  workspace: WorkspacePanel,
-  "code-tree": CodeTreePanel,
-  "agent-team": AgentTeamPanel
-};
 function buildDockviewComponents() {
-  const map = {};
-  for (const id of Object.keys(PS_PANEL_COMPONENTS)) {
-    map[PANEL_META[id].component] = PS_PANEL_COMPONENTS[id];
-  }
-  return map;
+  return { [NATIVE_COMPONENT]: NativeRegionPanel };
 }
 
 // client/panels/tabs.tsx
-var import_jsx_runtime10 = require("react/jsx-runtime");
-function tabPanelId(props, fallback) {
-  const fromApi = props.api?.id;
-  if (typeof fromApi === "string" && fromApi in PANEL_META) return fromApi;
-  const fromParams = props.params?.panelId;
-  if (typeof fromParams === "string" && fromParams in PANEL_META) return fromParams;
-  return fallback;
-}
-function panelTitle(panelId, t, fallback) {
-  if (panelId && panelId in PANEL_META) return t(PANEL_META[panelId].titleKey);
-  return fallback ?? "Panel";
-}
+var import_jsx_runtime3 = require("react/jsx-runtime");
 function PsDefaultTab(props) {
   const ctx = usePsPanels();
-  const panelId = tabPanelId(props);
-  const title = panelTitle(panelId, ctx.t, props.api?.title);
-  const collapsed = panelId ? collapsedOf(ctx, props, panelId) : props.params?.collapsed === true;
+  const regionId = regionIdFromProps(props) ?? props.api?.id;
+  const region = regionId === void 0 ? void 0 : ctx.regionOf(regionId);
+  const title = region?.title ?? props.api?.title ?? ctx.t("native.unknownTitle");
+  const collapsed = regionId === void 0 ? props.params?.collapsed === true : collapsedOf(ctx, props, regionId);
   const onToggle = (event) => {
     event.stopPropagation();
     event.preventDefault();
-    if (panelId) ctx.toggleCollapse(panelId);
+    if (regionId !== void 0) ctx.toggleCollapse(regionId);
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "ps-tab", "data-panel-id": panelId, "data-active": props.api?.isActive === true ? "true" : "false", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "ps-tab__grip", "aria-hidden": "true", children: "\u22EE\u22EE" }),
-    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "ps-tab__label", title, children: title }),
-    panelId ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ps-tab", "data-region": regionId, "data-active": props.api?.isActive === true ? "true" : "false", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "ps-tab__grip", "aria-hidden": "true", children: "\u22EE\u22EE" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "ps-tab__label", title, children: title }),
+    regionId !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       "button",
       {
         type: "button",
         className: "ps-tab__btn",
         "data-ps-action": "collapse",
-        "data-panel-id": panelId,
+        "data-region": regionId,
         "aria-expanded": !collapsed,
         "aria-label": ctx.t(collapsed ? "ui.expandPanel" : "ui.collapsePanel", { name: title }),
         title: ctx.t(collapsed ? "ui.expand" : "ui.collapse"),
@@ -19493,53 +19386,47 @@ function PsDefaultTab(props) {
 
 // client/layout-persist.ts
 var LOCAL_SNAPSHOT_KEY = "dsh-ps-floating-panels:layout";
-function defaultLayoutJson() {
-  const leaf = (id, views, size, active) => ({
+var COLUMN_WEIGHT = { left: 26, center: 48, right: 26 };
+function regionIdOfParams(params) {
+  const value = params?.regionId ?? params?.panelId;
+  return typeof value === "string" && value.length > 0 ? value : void 0;
+}
+function defaultLayoutJson(regions) {
+  const panels = {};
+  for (const region of regions) {
+    panels[region.id] = {
+      id: region.id,
+      contentComponent: NATIVE_COMPONENT,
+      tabComponent: void 0,
+      title: region.title,
+      params: { regionId: region.id, collapsed: false }
+    };
+  }
+  const leaf = (column, members, size) => ({
     type: "leaf",
     size,
     data: {
-      id,
-      views: views.map((p) => PANEL_META[p].component),
-      activeView: PANEL_META[active ?? views[0]].component
+      id: `group-${column}`,
+      views: members.map((region) => region.id),
+      activeView: members[0]?.id
     }
   });
-  const panels = {};
-  for (const id of PANEL_IDS) {
-    panels[PANEL_META[id].component] = {
-      id: PANEL_META[id].component,
-      contentComponent: PANEL_META[id].component,
-      tabComponent: void 0,
-      title: PANEL_META[id].titleKey,
-      params: { panelId: id, collapsed: false }
+  const columns = ["left", "center", "right"].map((column) => ({ column, members: regions.filter((region) => region.column === column) })).filter((entry) => entry.members.length > 0);
+  const totalWeight = columns.reduce((sum, entry) => sum + COLUMN_WEIGHT[entry.column], 0);
+  const columnNode = (entry, size) => {
+    if (entry.members.length === 1) return leaf(entry.column, entry.members, size);
+    const each = size / entry.members.length;
+    return {
+      type: "branch",
+      size,
+      data: entry.members.map((region) => leaf(entry.column, [region], each))
     };
-  }
+  };
+  const nodes = columns.map((entry) => columnNode(entry, COLUMN_WEIGHT[entry.column] / totalWeight * 100));
+  const root = nodes.length === 1 ? nodes[0] : { type: "branch", size: 100, data: nodes };
   return {
     grid: {
-      root: {
-        type: "branch",
-        size: 100,
-        data: [
-          leaf("group-conversation-tree", ["conversation-tree"], 18),
-          {
-            type: "branch",
-            size: 55,
-            data: [
-              leaf("group-code-preview", ["code-preview"], 34),
-              leaf("group-conversation", ["conversation"], 40),
-              leaf("group-composer", ["composer"], 26)
-            ]
-          },
-          {
-            type: "branch",
-            size: 27,
-            data: [
-              leaf("group-workspace", ["workspace"], 34),
-              leaf("group-code-tree", ["code-tree"], 33),
-              leaf("group-agent-team", ["agent-team"], 33)
-            ]
-          }
-        ]
-      },
+      root,
       width: 1280,
       height: 800,
       orientation: "HORIZONTAL"
@@ -19553,7 +19440,7 @@ function readCollapsed(api) {
   const panels = api.panels;
   if (!Array.isArray(panels)) return out;
   for (const panel of panels) {
-    const panelId = panel?.params?.panelId;
+    const panelId = regionIdOfParams(panel?.params);
     if (typeof panelId === "string" && panelId.length > 0) {
       out[panelId] = panel?.params?.collapsed === true;
     }
@@ -19594,10 +19481,11 @@ function captureLayout(api, now = Date.now) {
 function isPersistedLayout(value) {
   if (!value || typeof value !== "object") return false;
   const v = value;
-  return typeof v.version === "number" && "dockview" in v;
+  return v.version === LAYOUT_VERSION && "dockview" in v;
 }
-function applyLayout(api, persisted) {
-  const payload = persisted?.dockview ?? defaultLayoutJson();
+function applyLayout(api, persisted, regions) {
+  const usable = persisted !== null && persisted.version === LAYOUT_VERSION && persisted.dockview !== void 0;
+  const payload = usable ? persisted.dockview : defaultLayoutJson(regions);
   try {
     api.clear();
   } catch {
@@ -19608,7 +19496,7 @@ function applyLayout(api, persisted) {
   } catch (err) {
     console.warn("[dsh-ps-floating-panels] fromJSON failed, using default layout", err);
     try {
-      api.fromJSON(defaultLayoutJson());
+      api.fromJSON(defaultLayoutJson(regions));
       return true;
     } catch (err2) {
       console.error("[dsh-ps-floating-panels] default layout also failed", err2);
@@ -19690,7 +19578,7 @@ function createLayoutPersistence(options) {
       }
       try {
         api?.clear();
-        api?.fromJSON(defaultLayoutJson());
+        api?.fromJSON(defaultLayoutJson(options.regions()));
       } catch (err) {
         console.warn("[dsh-ps-floating-panels] reset failed", err);
       }
@@ -19705,8 +19593,394 @@ function createLayoutPersistence(options) {
   };
 }
 
+// client/native-regions.ts
+var SIDEBAR_SLOT = "sidebar";
+var MAIN_SLOT = "main";
+var RIGHTBAR_SLOT = "rightbar";
+function slotSelector(slotKey) {
+  return `[data-slot="${slotKey}"]`;
+}
+var RIGHTBAR_SELECTOR = slotSelector(RIGHTBAR_SLOT);
+var PANE_SELECTOR = "[data-dockkit-pane], [data-dockkit-float]";
+var OVERLAY_LAYER_SELECTOR = "[data-shell-overlay]";
+var SELF_ROOT_SELECTOR = "[data-ps-floating-panels]";
+var ADOPTED_ATTR = "data-ps-adopted";
+function slug(value) {
+  const slugged = value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return slugged.length > 0 ? slugged : "x";
+}
+function regionIdForSlot(slotKey) {
+  return `slot-${slug(slotKey)}`;
+}
+function regionIdForPane(paneId) {
+  return `pane-${slug(paneId)}`;
+}
+var TITLE_MAX = 40;
+function normalizeTitle(raw) {
+  if (typeof raw !== "string") return void 0;
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (text.length === 0) return void 0;
+  return text.length > TITLE_MAX ? `${text.slice(0, TITLE_MAX - 1)}\u2026` : text;
+}
+function readPaneTitle(element) {
+  if (!element) return void 0;
+  return normalizeTitle(element.querySelector("[data-dockkit-float-title]")?.textContent) ?? normalizeTitle(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent) ?? normalizeTitle(element.querySelector('[role="tab"]')?.textContent);
+}
+function readPaneId(element) {
+  const id = element.getAttribute("data-dockkit-pane") ?? element.getAttribute("data-dockkit-float");
+  return id !== null && id.length > 0 ? id : void 0;
+}
+var DEFAULT_TITLES = { sidebar: "Sidebar", main: "Main" };
+function discoverRegions(doc, titles = DEFAULT_TITLES) {
+  if (!doc) return [];
+  const out = [];
+  try {
+    if (doc.querySelector(slotSelector(SIDEBAR_SLOT))) {
+      out.push({ id: regionIdForSlot(SIDEBAR_SLOT), kind: "slot", column: "left", title: titles.sidebar, slotKey: SIDEBAR_SLOT });
+    }
+    if (doc.querySelector(slotSelector(MAIN_SLOT))) {
+      out.push({ id: regionIdForSlot(MAIN_SLOT), kind: "slot", column: "center", title: titles.main, slotKey: MAIN_SLOT });
+    }
+    const rightbar = doc.querySelector(RIGHTBAR_SELECTOR);
+    if (rightbar) {
+      const seen = /* @__PURE__ */ new Set();
+      for (const element of Array.from(rightbar.querySelectorAll(PANE_SELECTOR))) {
+        const paneId = readPaneId(element);
+        if (paneId === void 0 || seen.has(paneId)) continue;
+        seen.add(paneId);
+        out.push({
+          id: regionIdForPane(paneId),
+          kind: "pane",
+          column: "right",
+          title: readPaneTitle(element) ?? paneId,
+          paneId
+        });
+      }
+    }
+  } catch (error) {
+    console.warn("[dsh-ps-floating-panels] native region discovery failed", error);
+  }
+  return out;
+}
+function resolveRegionElement(doc, region) {
+  if (!doc) return null;
+  try {
+    if (region.kind === "slot" && region.slotKey !== void 0) {
+      return doc.querySelector(slotSelector(region.slotKey));
+    }
+    if (region.kind === "pane" && region.paneId !== void 0) {
+      const scope = doc.querySelector(RIGHTBAR_SELECTOR) ?? doc;
+      for (const element of Array.from(scope.querySelectorAll(PANE_SELECTOR))) {
+        if (readPaneId(element) === region.paneId) return element;
+      }
+    }
+  } catch (error) {
+    console.warn("[dsh-ps-floating-panels] native region resolve failed", error);
+  }
+  return null;
+}
+function regionSignature(regions) {
+  return regions.map((region) => `${region.id}@${region.title}`).join("|");
+}
+function createNativeAdopter(doc, options = {}) {
+  const titles = options.titles ?? DEFAULT_TITLES;
+  const throttleMs = options.rescanThrottleMs ?? 400;
+  const intervalMs = options.rescanIntervalMs ?? 2500;
+  const observe = options.observe !== false;
+  const adoptions = /* @__PURE__ */ new Map();
+  const listeners = /* @__PURE__ */ new Set();
+  let regions = [];
+  let byId = /* @__PURE__ */ new Map();
+  let signature = "";
+  let started = false;
+  let observer;
+  let interval;
+  let throttle;
+  const selfRoot = () => {
+    try {
+      return doc?.querySelector(SELF_ROOT_SELECTOR) ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const isUnsafe = (element2) => {
+    const root = selfRoot();
+    if (root === null) return false;
+    return element2 === root || element2.contains(root);
+  };
+  const mark = (element2, regionId) => {
+    try {
+      element2.setAttribute(ADOPTED_ATTR, regionId);
+    } catch {
+    }
+  };
+  const unmark = (element2) => {
+    try {
+      element2.removeAttribute(ADOPTED_ATTR);
+    } catch {
+    }
+  };
+  const notify = () => {
+    for (const listener of [...listeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.warn("[dsh-ps-floating-panels] native region listener failed", error);
+      }
+    }
+  };
+  const refresh = () => {
+    const next = discoverRegions(doc, titles);
+    const nextSignature = regionSignature(next);
+    let changed = nextSignature !== signature;
+    regions = next;
+    signature = nextSignature;
+    byId = new Map(next.map((region) => [region.id, region]));
+    for (const [regionId, record] of [...adoptions]) {
+      const region = byId.get(regionId);
+      const live = region === void 0 ? null : resolveRegionElement(doc, region);
+      if (live === null) {
+        adoptions.delete(regionId);
+        changed = true;
+        continue;
+      }
+      if (live !== record.element) {
+        unmark(record.element);
+        adoptions.delete(regionId);
+        changed = true;
+        continue;
+      }
+      if (live.parentNode !== record.container) {
+        try {
+          mark(live, regionId);
+          record.container.replaceChildren(live);
+          changed = true;
+        } catch (error) {
+          console.warn("[dsh-ps-floating-panels] re-adopting a native region failed", error);
+        }
+      }
+    }
+    if (changed) notify();
+  };
+  const scheduleRefresh = () => {
+    if (throttle !== void 0) return;
+    throttle = setTimeout(() => {
+      throttle = void 0;
+      try {
+        refresh();
+      } catch (error) {
+        console.warn("[dsh-ps-floating-panels] native rescan failed", error);
+      }
+    }, throttleMs);
+  };
+  const element = (regionId) => {
+    const record = adoptions.get(regionId);
+    if (record !== void 0 && record.element.isConnected) return record.element;
+    const region = byId.get(regionId);
+    return region === void 0 ? null : resolveRegionElement(doc, region);
+  };
+  const attach = (regionId, container) => {
+    const region = byId.get(regionId);
+    if (region === void 0) return false;
+    const live = resolveRegionElement(doc, region);
+    if (live === null || isUnsafe(live)) return false;
+    const existing = adoptions.get(regionId);
+    if (existing !== void 0 && existing.element !== live) adoptions.delete(regionId);
+    let record = adoptions.get(regionId);
+    if (record === void 0) {
+      record = { element: live, parent: live.parentNode, next: live.nextSibling, container };
+      adoptions.set(regionId, record);
+    }
+    record.container = container;
+    if (live.parentNode !== container) {
+      try {
+        mark(live, regionId);
+        container.replaceChildren(live);
+      } catch (error) {
+        console.warn("[dsh-ps-floating-panels] adopting a native region failed", error);
+        adoptions.delete(regionId);
+        return false;
+      }
+    }
+    return true;
+  };
+  const detach = (regionId) => {
+    const record = adoptions.get(regionId);
+    if (record === void 0) return;
+    adoptions.delete(regionId);
+    const { element: node, parent, next } = record;
+    unmark(node);
+    if (parent === null || !parent.isConnected) return;
+    try {
+      if (next !== null && next.parentNode === parent) parent.insertBefore(node, next);
+      else parent.appendChild(node);
+    } catch (error) {
+      console.warn("[dsh-ps-floating-panels] restoring a native region failed", error);
+    }
+  };
+  const detachAll = () => {
+    for (const regionId of [...adoptions.keys()].reverse()) detach(regionId);
+  };
+  const start = () => {
+    if (started) return;
+    started = true;
+    refresh();
+    if (!observe) return;
+    try {
+      if (typeof MutationObserver === "function" && doc !== void 0) {
+        const target = doc.documentElement ?? doc;
+        observer = new MutationObserver(scheduleRefresh);
+        observer.observe(target, { childList: true, subtree: true });
+      }
+    } catch (error) {
+      console.warn("[dsh-ps-floating-panels] native region observer unavailable", error);
+    }
+    interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden === true) return;
+      try {
+        refresh();
+      } catch (error) {
+        console.warn("[dsh-ps-floating-panels] native rescan failed", error);
+      }
+    }, intervalMs);
+  };
+  const stop = () => {
+    started = false;
+    observer?.disconnect();
+    observer = void 0;
+    if (interval !== void 0) clearInterval(interval);
+    interval = void 0;
+    if (throttle !== void 0) clearTimeout(throttle);
+    throttle = void 0;
+  };
+  return {
+    regions: () => regions,
+    region: (regionId) => byId.get(regionId),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    element,
+    attach,
+    detach,
+    detachAll,
+    adopted: () => [...adoptions.keys()],
+    refresh,
+    start,
+    stop
+  };
+}
+var NATIVE_PANELS_GLOBAL = "__DSH_NATIVE_PANELS__";
+function installNativePanelsBridge(win, adopter) {
+  if (!win || typeof win !== "object") return () => {
+  };
+  const bridge = {
+    version: 1,
+    plugin: "dsh-ps-floating-panels",
+    list: () => adopter.regions().map((region) => ({ id: region.id, title: region.title, kind: region.kind })),
+    getElement: (regionId) => adopter.element(regionId),
+    subscribe: (listener) => adopter.subscribe(listener),
+    adopt: (regionId, container) => adopter.attach(regionId, container),
+    release: (regionId) => adopter.detach(regionId),
+    releaseAll: () => adopter.detachAll()
+  };
+  try {
+    ;
+    win[NATIVE_PANELS_GLOBAL] = bridge;
+  } catch (error) {
+    console.warn("[dsh-ps-floating-panels] native bridge not publishable", error);
+    return () => {
+    };
+  }
+  return () => {
+    try {
+      const target = win;
+      if (target[NATIVE_PANELS_GLOBAL] === bridge) delete target[NATIVE_PANELS_GLOBAL];
+    } catch {
+    }
+  };
+}
+
+// client/native-shell.ts
+var CHROME_HINT = /drag|handle|divider|resizer|gutter/i;
+function styleOf(element) {
+  const candidate = element;
+  return candidate.style;
+}
+function hide(element, memory) {
+  const style = styleOf(element);
+  if (style === void 0) return;
+  memory.push({ element, display: style.display ?? "" });
+  style.display = "none";
+}
+function childrenOf(parent) {
+  const children = parent.children;
+  return children === void 0 ? [] : Array.from(children);
+}
+function teardownNativeShell(doc, root) {
+  if (!doc) return null;
+  let overlay;
+  try {
+    overlay = doc.querySelector(OVERLAY_LAYER_SELECTOR);
+  } catch {
+    overlay = null;
+  }
+  const frame = overlay?.parentElement ?? null;
+  if (frame === null) return null;
+  const self = root ?? (() => {
+    try {
+      return doc.querySelector(SELF_ROOT_SELECTOR);
+    } catch {
+      return null;
+    }
+  })();
+  const memory = [];
+  const hidden = [];
+  const frameStyle = styleOf(frame);
+  const previousGrid = frameStyle?.gridTemplateColumns ?? "";
+  for (const slotKey of [SIDEBAR_SLOT, MAIN_SLOT, RIGHTBAR_SLOT]) {
+    let node;
+    try {
+      node = doc.querySelector(slotSelector(slotKey))?.parentElement ?? null;
+    } catch {
+      node = null;
+    }
+    let guard = 0;
+    while (node !== null && node !== frame && guard < 24) {
+      guard += 1;
+      if (self !== null && node.contains(self)) break;
+      if (!hidden.includes(node)) {
+        hide(node, memory);
+        hidden.push(node);
+      }
+      node = node.parentElement;
+    }
+  }
+  for (const child of childrenOf(frame)) {
+    if (child === overlay) continue;
+    if (self !== null && child.contains(self)) continue;
+    const className = typeof child.className === "string" ? child.className : "";
+    if (!CHROME_HINT.test(className)) continue;
+    if (hidden.includes(child)) continue;
+    hide(child, memory);
+    hidden.push(child);
+  }
+  if (frameStyle !== void 0) frameStyle.gridTemplateColumns = "1fr";
+  const restore = () => {
+    for (const entry of [...memory].reverse()) {
+      const style2 = styleOf(entry.element);
+      if (style2 !== void 0) style2.display = entry.display;
+    }
+    const style = styleOf(frame);
+    if (style !== void 0) style.gridTemplateColumns = previousGrid;
+    memory.length = 0;
+    hidden.length = 0;
+  };
+  return { frame, hidden, restore };
+}
+
 // client/status-badge.tsx
-var import_jsx_runtime11 = require("react/jsx-runtime");
+var import_jsx_runtime4 = require("react/jsx-runtime");
 function badgeState(collapsedCount, floatingCount2) {
   if (floatingCount2 > 0) return { dot: "", flipped: "true" };
   if (collapsedCount > 0) return { dot: "", flipped: "true" };
@@ -19716,8 +19990,8 @@ function StatusBadge({ show, panelCount, collapsedCount, floatingCount: floating
   if (!show) return null;
   const state = badgeState(collapsedCount, floatingCount2);
   const label = t("status.panelCount", { n: panelCount }) + (collapsedCount > 0 ? " " + t("status.collapsedSuffix", { n: collapsedCount }) : "");
-  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "ps-status-badge", "data-ps-status-badge": "true", role: "status", "aria-live": "polite", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ps-status-badge", "data-ps-status-badge": "true", role: "status", "aria-live": "polite", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
       "span",
       {
         className: "ps-status-badge__dot",
@@ -19726,58 +20000,98 @@ function StatusBadge({ show, panelCount, collapsedCount, floatingCount: floating
         "aria-hidden": "true"
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "ps-status-badge__label", children: label }),
-    floatingCount2 > 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "ps-status-badge__floating", children: t("status.floatingCount", { n: floatingCount2 }) }) : null
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ps-status-badge__label", children: label }),
+    floatingCount2 > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ps-status-badge__floating", children: t("status.floatingCount", { n: floatingCount2 }) }) : null
   ] });
 }
 
 // client/conflict-dialog.tsx
-var import_jsx_runtime12 = require("react/jsx-runtime");
+var import_jsx_runtime5 = require("react/jsx-runtime");
 function ConflictDialog({ conflicts, t, onDismiss }) {
   if (conflicts.length === 0) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "ps-conflict-backdrop", role: "alertdialog", "aria-modal": "true", "aria-label": t("conflict.title"), children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "ps-conflict-dialog", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "ps-conflict-dialog__title", children: t("conflict.title") }),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { children: t("conflict.body") }),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("ul", { className: "ps-conflict-dialog__list", children: conflicts.map((c) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("li", { "data-conflict-id": c.id, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("code", { children: c.id }),
-      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("span", { className: "ps-conflict-dialog__hint", children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ps-conflict-backdrop", role: "alertdialog", "aria-modal": "true", "aria-label": t("conflict.title"), children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ps-conflict-dialog", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ps-conflict-dialog__title", children: t("conflict.title") }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { children: t("conflict.body") }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ps-conflict-dialog__list", children: conflicts.map((c) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { "data-conflict-id": c.id, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("code", { children: c.id }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "ps-conflict-dialog__hint", children: [
         " (",
         c.keyword,
         ")"
       ] })
     ] }, c.id)) }),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "ps-conflict-dialog__hint", children: t("conflict.hint") }),
-    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "ps-conflict-dialog__actions", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { type: "button", className: "ps-dock-btn", "data-ps-action": "conflict-dismiss", onClick: onDismiss, children: t("conflict.dismiss") }) })
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ps-conflict-dialog__hint", children: t("conflict.hint") }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ps-conflict-dialog__actions", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "ps-dock-btn", "data-ps-action": "conflict-dismiss", onClick: onDismiss, children: t("conflict.dismiss") }) })
   ] }) });
 }
 
 // client/PsFloatingPanelsApp.tsx
-var import_jsx_runtime13 = require("react/jsx-runtime");
-function writePanelCollapsed(api, component, collapsed) {
-  const panel = api.getPanel?.(component);
+var import_jsx_runtime6 = require("react/jsx-runtime");
+function panelsOf(api) {
+  return api.panels ?? [];
+}
+function panelRegionId(panel) {
+  return panel.id ?? regionIdOfParams(panel.params);
+}
+function writePanelCollapsed(api, regionId, collapsed) {
+  const panel = api.getPanel?.(regionId);
   if (!panel) return;
-  const next = { ...panel.params ?? {}, collapsed };
-  if (typeof panel.api?.updateParameters === "function") {
-    panel.api.updateParameters(next);
-  } else {
-    panel.params = next;
-  }
+  const next = { ...panel.params ?? {}, regionId, collapsed };
+  if (typeof panel.api?.updateParameters === "function") panel.api.updateParameters(next);
+  else panel.params = next;
 }
 function syncCollapsedToParams(api, collapsed) {
-  for (const id of PANEL_IDS) {
-    writePanelCollapsed(api, PANEL_META[id].component, collapsed[id] === true);
+  for (const panel of panelsOf(api)) {
+    const regionId = panelRegionId(panel);
+    if (regionId !== void 0) writePanelCollapsed(api, regionId, collapsed[regionId] === true);
   }
 }
-function initCollapsed(config, persisted) {
+function initCollapsed(regions, config, persisted) {
   const map = {};
-  for (const id of PANEL_IDS) map[id] = false;
+  for (const region of regions) map[region.id] = false;
   for (const id of config.collapsedPanels) map[id] = true;
   if (persisted?.collapsed && typeof persisted.collapsed === "object") {
     for (const [key, value] of Object.entries(persisted.collapsed)) {
-      if (key in map) map[key] = value === true;
+      map[key] = value === true;
     }
   }
   return map;
+}
+function syncPanels(api, regions, collapsed) {
+  if (regions.length === 0) return;
+  const host = api;
+  const existing = /* @__PURE__ */ new Map();
+  for (const panel of panelsOf(api)) {
+    const regionId = panelRegionId(panel);
+    if (regionId !== void 0) existing.set(regionId, panel);
+  }
+  for (const [regionId, panel] of [...existing]) {
+    if (regions.some((region) => region.id === regionId)) continue;
+    existing.delete(regionId);
+    try {
+      if (typeof host.removePanel === "function") host.removePanel(panel);
+      else panel.api?.close?.();
+    } catch (error) {
+      console.warn(`[dsh-ps-floating-panels] closing the panel for a gone region failed (${regionId})`, error);
+    }
+  }
+  for (const region of regions) {
+    if (existing.has(region.id)) continue;
+    const sameColumn = regions.find((other) => other.column === region.column && existing.has(other.id));
+    const reference = sameColumn?.id ?? existing.keys().next().value;
+    try {
+      const added = host.addPanel?.({
+        id: region.id,
+        component: NATIVE_COMPONENT,
+        title: region.title,
+        params: { regionId: region.id, collapsed: collapsed[region.id] === true },
+        position: reference === void 0 ? void 0 : { referencePanel: reference, direction: sameColumn === void 0 ? "right" : "within" }
+      });
+      if (added !== void 0 && added !== null) existing.set(region.id, added);
+    } catch (error) {
+      console.warn(`[dsh-ps-floating-panels] adding a panel for a new region failed (${region.id})`, error);
+    }
+  }
 }
 function floatingCount(api) {
   if (!api) return 0;
@@ -19802,27 +20116,55 @@ function useDesktopViewport(minWidth) {
   }, [read]);
   return desktop;
 }
-function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }) {
+function PsFloatingPanelsApp({ t, configSource, adopter, host, conflicts = [] }) {
   const config = (0, import_react4.useSyncExternalStore)(
     (0, import_react4.useCallback)((cb) => configSource.subscribe(cb), [configSource]),
     () => configSource.getSnapshot(),
     () => configSource.getSnapshot()
   );
+  const regions = (0, import_react4.useSyncExternalStore)(
+    (0, import_react4.useCallback)((cb) => adopter.subscribe(cb), [adopter]),
+    () => adopter.regions(),
+    () => adopter.regions()
+  );
   const isDesktop = useDesktopViewport(config.minDesktopWidth);
+  const rootRef = (0, import_react4.useRef)(null);
   const apiRef = (0, import_react4.useRef)(null);
   const dirtyRef = (0, import_react4.useRef)(false);
   const collapsedRef = (0, import_react4.useRef)({});
-  const persistence = (0, import_react4.useMemo)(() => createLayoutPersistence({
-    api: () => apiRef.current ?? void 0,
-    host,
-    debounceMs: config.persistDebounceMs
-  }), [host, config.persistDebounceMs]);
-  const [collapsed, setCollapsed] = (0, import_react4.useState)(() => initCollapsed(config, persistence.loadLocal()));
+  const regionsRef = (0, import_react4.useRef)(regions);
+  regionsRef.current = regions;
+  const [dockReady, setDockReady] = (0, import_react4.useState)(false);
+  const [adopted, setAdopted] = (0, import_react4.useState)(() => config.nativeAdopt && readNativeAdopted());
+  const [collapsed, setCollapsed] = (0, import_react4.useState)(() => initCollapsed(regions, config, null));
   collapsedRef.current = collapsed;
   const [plateFloating, setPlateFloating] = (0, import_react4.useState)(0);
   const [conflictDismissed, setConflictDismissed] = (0, import_react4.useState)(false);
-  const [replacedHostMain, setReplacedHostMain] = (0, import_react4.useState)(false);
   const components = (0, import_react4.useMemo)(() => buildDockviewComponents(), []);
+  const persistence = (0, import_react4.useMemo)(() => createLayoutPersistence({
+    api: () => apiRef.current ?? void 0,
+    regions: () => regionsRef.current.map((region) => ({ id: region.id, title: region.title, column: region.column })),
+    host,
+    debounceMs: config.persistDebounceMs
+  }), [host, config.persistDebounceMs]);
+  const setAdoptedPersisted = (0, import_react4.useCallback)((next) => {
+    setAdopted(next);
+    writeNativeAdopted(next);
+  }, []);
+  (0, import_react4.useEffect)(() => {
+    if (!config.nativeAdopt) setAdopted(false);
+  }, [config.nativeAdopt]);
+  (0, import_react4.useEffect)(() => {
+    const seeded = initCollapsed(regions, config, persistence.loadLocal());
+    collapsedRef.current = { ...seeded, ...collapsedRef.current };
+    setCollapsed(collapsedRef.current);
+  }, [regions]);
+  (0, import_react4.useEffect)(() => {
+    const api = apiRef.current;
+    if (!api || !dockReady) return;
+    syncPanels(api, regions, collapsedRef.current);
+    setPlateFloating(floatingCount(apiRef.current ?? void 0));
+  }, [regions, dockReady]);
   const refreshDerived = (0, import_react4.useCallback)(() => {
     setPlateFloating(floatingCount(apiRef.current ?? void 0));
   }, []);
@@ -19835,17 +20177,36 @@ function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }) {
     const api = event.api;
     apiRef.current = api;
     const local = persistence.loadLocal();
-    applyLayout(api, local);
+    applyLayout(
+      api,
+      local,
+      regionsRef.current.map((region) => ({ id: region.id, title: region.title, column: region.column }))
+    );
+    if (local === null || local.version !== 2) {
+      const seeded = initCollapsed(regionsRef.current, config, local);
+      collapsedRef.current = seeded;
+      setCollapsed(seeded);
+    } else {
+      const seeded = initCollapsed(regionsRef.current, config, local);
+      collapsedRef.current = { ...seeded, ...local.collapsed, ...collapsedRef.current };
+      setCollapsed(collapsedRef.current);
+    }
     syncCollapsedToParams(api, collapsedRef.current);
+    syncPanels(api, regionsRef.current, collapsedRef.current);
     void persistence.load().then((remote) => {
       if (!remote || dirtyRef.current) return;
       const localStamp = local?.updatedAt ?? 0;
       if (remote.updatedAt > localStamp) {
-        applyLayout(api, remote);
-        const next = initCollapsed(config, remote);
+        applyLayout(
+          api,
+          remote,
+          regionsRef.current.map((region) => ({ id: region.id, title: region.title, column: region.column }))
+        );
+        const next = { ...initCollapsed(regionsRef.current, config, remote), ...remote.collapsed };
         collapsedRef.current = next;
         setCollapsed(next);
         syncCollapsedToParams(api, next);
+        syncPanels(api, regionsRef.current, next);
         refreshDerived();
       }
     });
@@ -19854,29 +20215,32 @@ function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }) {
     if (typeof addSub === "function") {
       addSub.call(api, () => syncCollapsedToParams(api, collapsedRef.current));
     }
+    setDockReady(true);
     refreshDerived();
   }, [persistence, config, onLayoutChanged, refreshDerived]);
-  const toggleCollapse = (0, import_react4.useCallback)((panelId) => {
-    const next = { ...collapsedRef.current, [panelId]: !collapsedRef.current[panelId] };
+  const toggleCollapse = (0, import_react4.useCallback)((regionId) => {
+    const next = { ...collapsedRef.current, [regionId]: !collapsedRef.current[regionId] };
     collapsedRef.current = next;
     setCollapsed(next);
     const api = apiRef.current;
-    if (api) writePanelCollapsed(api, PANEL_META[panelId].component, next[panelId]);
+    if (api) writePanelCollapsed(api, regionId, next[regionId]);
     dirtyRef.current = true;
     persistence.scheduleSave();
   }, [persistence]);
   const resetLayout = (0, import_react4.useCallback)(() => {
     const next = {};
-    for (const id of PANEL_IDS) next[id] = false;
+    for (const region of regionsRef.current) next[region.id] = false;
     collapsedRef.current = next;
     setCollapsed(next);
     persistence.reset();
+    const api = apiRef.current;
+    if (api) syncCollapsedToParams(api, next);
     dirtyRef.current = true;
     refreshDerived();
   }, [persistence, refreshDerived]);
   const expandAll = (0, import_react4.useCallback)(() => {
     const next = {};
-    for (const id of PANEL_IDS) next[id] = false;
+    for (const region of regionsRef.current) next[region.id] = false;
     collapsedRef.current = next;
     setCollapsed(next);
     const api = apiRef.current;
@@ -19884,42 +20248,64 @@ function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }) {
     dirtyRef.current = true;
     persistence.scheduleSave();
   }, [persistence]);
+  const rescan = (0, import_react4.useCallback)(() => {
+    adopter.refresh();
+  }, [adopter]);
+  const restoreNative = (0, import_react4.useCallback)(() => {
+    setAdoptedPersisted(false);
+  }, [setAdoptedPersisted]);
   (0, import_react4.useEffect)(() => {
-    if (!isDesktop || !config.enabled || config.layoutMode !== "replace") return;
-    if (typeof document === "undefined") return;
-    const main = document.querySelector("main");
-    if (!(main instanceof HTMLElement)) return;
-    const previous = main.getAttribute("data-ps-replaced");
-    main.setAttribute("data-ps-replaced", "true");
-    setReplacedHostMain(true);
-    return () => {
-      if (previous === null) main.removeAttribute("data-ps-replaced");
-      else main.setAttribute("data-ps-replaced", previous);
-      setReplacedHostMain(false);
-    };
-  }, [isDesktop, config.enabled, config.layoutMode]);
+    const active = adopted && isDesktop && config.enabled && dockReady;
+    if (!active || typeof document === "undefined") return;
+    if (regions.length > 0 && adopter.adopted().length === 0) return;
+    const teardown = teardownNativeShell(document, rootRef.current);
+    return () => teardown?.restore();
+  }, [adopted, isDesktop, config.enabled, dockReady, regions, adopter]);
   if (!config.enabled) return null;
   if (!isDesktop) return null;
-  const ctx = { t, collapsed, toggleCollapse };
-  const collapsedCount = PANEL_IDS.filter((id) => collapsed[id] === true).length;
-  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+  const ctx = {
+    t,
+    collapsed,
+    toggleCollapse,
+    regions,
+    regionOf: (regionId) => adopter.region(regionId),
+    adopter
+  };
+  const collapsedCount = regions.filter((region) => collapsed[region.id] === true).length;
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
     "div",
     {
       className: "ps-floating-root",
       "data-ps-floating-panels": "true",
-      "data-layout-mode": config.layoutMode,
-      "data-host-main-replaced": replacedHostMain ? "true" : void 0,
+      "data-native": adopted ? "adopted" : "restored",
+      ref: rootRef,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(PsPanelsProvider, { value: ctx, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("section", { className: "ps-dock-shell", "aria-label": t("ui.launcher"), children: [
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("header", { className: "ps-dock-toolbar", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "ps-dock-toolbar__title", children: t("ui.launcher") }),
-            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "ps-dock-toolbar__hint", title: t("ui.dockHint"), children: t("ui.dockHint") }),
-            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "ps-dock-toolbar__actions", children: config.showLauncher ? /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { type: "button", className: "ps-dock-btn", "data-ps-action": "expand-all", onClick: expandAll, children: t("ui.showAll") }),
-              /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { type: "button", className: "ps-dock-btn", "data-ps-action": "reset", title: t("ui.resetTitle"), onClick: resetLayout, children: t("ui.reset") })
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(PsPanelsProvider, { value: ctx, children: adopted ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "ps-dock-shell", "aria-label": t("ui.launcher"), children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("header", { className: "ps-dock-toolbar", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "ps-dock-toolbar__title", children: [
+              t("ui.launcher"),
+              " \xB7 ",
+              t("status.panelCount", { n: regions.length })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ps-dock-toolbar__hint", title: t("ui.dockHint"), children: t("ui.dockHint") }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ps-dock-toolbar__actions", children: config.showLauncher ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "ps-dock-btn", "data-ps-action": "rescan", title: t("ui.rescanTitle"), onClick: rescan, children: t("ui.rescan") }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "ps-dock-btn", "data-ps-action": "expand-all", onClick: expandAll, children: t("ui.showAll") }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "ps-dock-btn", "data-ps-action": "reset", title: t("ui.resetTitle"), onClick: resetLayout, children: t("ui.reset") }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                "button",
+                {
+                  type: "button",
+                  className: "ps-dock-btn",
+                  "data-ps-action": "restore-native",
+                  title: t("ui.restoreNativeTitle"),
+                  onClick: restoreNative,
+                  children: t("ui.restoreNative")
+                }
+              )
             ] }) : null })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "ps-dock-surface", children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ps-dock-surface", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
             DockviewReact,
             {
               components,
@@ -19931,18 +20317,28 @@ function PsFloatingPanelsApp({ t, configSource, host, conflicts = [] }) {
               proportionalLayout: true
             }
           ) })
-        ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          "button",
+          {
+            type: "button",
+            className: "ps-launcher-pill",
+            "data-ps-action": "adopt-native",
+            title: t("ui.adoptNativeTitle"),
+            onClick: () => setAdoptedPersisted(true),
+            children: t("ui.adoptNative")
+          }
+        ) }),
+        adopted ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
           StatusBadge,
           {
             show: config.showStatusBadge,
-            panelCount: PANEL_IDS.length,
+            panelCount: regions.length,
             collapsedCount,
             floatingCount: plateFloating,
             t
           }
-        ),
-        !conflictDismissed ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ConflictDialog, { conflicts, t, onDismiss: () => setConflictDismissed(true) }) : null
+        ) : null,
+        !conflictDismissed ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ConflictDialog, { conflicts, t, onDismiss: () => setConflictDismissed(true) }) : null
       ]
     }
   );
@@ -20085,7 +20481,7 @@ function resolveConfigSource(ctx, namespace, rowConfig) {
 var DOCKVIEW_BASE_CSS = '.dv-drop-target-container {\n  position: absolute;\n  z-index: 9999;\n  top: 0px;\n  left: 0px;\n  height: 100%;\n  width: 100%;\n  pointer-events: none;\n  overflow: hidden;\n  --dv-transition-duration: 300ms;\n}\n.dv-drop-target-container .dv-drop-target-anchor {\n  position: relative;\n  border: var(--dv-drag-over-border);\n  background-color: var(--dv-drag-over-background-color);\n  opacity: 1;\n  /* GPU optimizations */\n  will-change: transform, opacity;\n  transform: translate3d(0, 0, 0);\n  backface-visibility: hidden;\n  contain: layout paint;\n  transition: opacity var(--dv-transition-duration) ease-in, top var(--dv-transition-duration) ease-out, left var(--dv-transition-duration) ease-out, width var(--dv-transition-duration) ease-out, height var(--dv-transition-duration) ease-out;\n}\n.dv-drop-target {\n  position: relative;\n  --dv-transition-duration: 70ms;\n}\n.dv-drop-target > .dv-drop-target-dropzone {\n  position: absolute;\n  left: 0px;\n  top: 0px;\n  height: 100%;\n  width: 100%;\n  z-index: 1000;\n  pointer-events: none;\n}\n.dv-drop-target > .dv-drop-target-dropzone > .dv-drop-target-selection {\n  position: relative;\n  box-sizing: border-box;\n  height: 100%;\n  width: 100%;\n  border: var(--dv-drag-over-border);\n  background-color: var(--dv-drag-over-background-color);\n  transition: top var(--dv-transition-duration) ease-out, left var(--dv-transition-duration) ease-out, width var(--dv-transition-duration) ease-out, height var(--dv-transition-duration) ease-out, opacity var(--dv-transition-duration) ease-out;\n  will-change: transform;\n  pointer-events: none;\n}\n.dv-drop-target > .dv-drop-target-dropzone > .dv-drop-target-selection.dv-drop-target-top.dv-drop-target-small-vertical {\n  border-top: 1px solid var(--dv-drag-over-border-color);\n}\n.dv-drop-target > .dv-drop-target-dropzone > .dv-drop-target-selection.dv-drop-target-bottom.dv-drop-target-small-vertical {\n  border-bottom: 1px solid var(--dv-drag-over-border-color);\n}\n.dv-drop-target > .dv-drop-target-dropzone > .dv-drop-target-selection.dv-drop-target-left.dv-drop-target-small-horizontal {\n  border-left: 1px solid var(--dv-drag-over-border-color);\n}\n.dv-drop-target > .dv-drop-target-dropzone > .dv-drop-target-selection.dv-drop-target-right.dv-drop-target-small-horizontal {\n  border-right: 1px solid var(--dv-drag-over-border-color);\n}\n\n.dv-dnd-compass {\n  z-index: 1001;\n}\n\n.dv-dnd-compass-cell {\n  box-sizing: border-box;\n  border-radius: 2px;\n  border: 1px solid var(--dv-dnd-compass-color, #1f9cf0);\n  background-color: var(--dv-dnd-compass-cell-color, rgba(31, 156, 240, 0.25));\n}\n\n.dv-dnd-compass-cell-edge {\n  border-style: dashed;\n  background-color: var(--dv-dnd-compass-edge-cell-color, rgba(31, 156, 240, 0.12));\n}\n\n.dv-dnd-compass-cell-active {\n  background-color: var(--dv-dnd-compass-active-cell-color, rgba(31, 156, 240, 0.5));\n  border-style: solid;\n}\n\n.dv-dnd-compass-edge-preview {\n  z-index: 1000;\n  box-sizing: border-box;\n  background-color: var(--dv-drag-over-background-color);\n  border: var(--dv-drag-over-border);\n}\n.dv-dragged {\n  transform: translate3d(0px, 0px, 0px); /* forces tab to be drawn on a separate layer (see https://github.com/microsoft/vscode/issues/18733) */\n}\n\n/* Applied to the ghost tab clone during drag so it shows the same border as a focused tab */\n.dv-tab-ghost-drag {\n  position: relative;\n}\n.dv-tab-ghost-drag::after {\n  position: absolute;\n  content: "";\n  height: 100%;\n  width: 100%;\n  top: 0px;\n  left: 0px;\n  pointer-events: none;\n  outline: 1px solid var(--dv-tab-divider-color) !important;\n  outline-offset: -1px;\n  z-index: 5;\n}\n\n.dv-tab {\n  flex-shrink: 0;\n}\n.dv-tab:focus-visible, .dv-tab:has(:focus-visible) {\n  position: relative;\n}\n.dv-tab:focus-visible::after, .dv-tab:has(:focus-visible)::after {\n  position: absolute;\n  content: "";\n  height: 100%;\n  width: 100%;\n  top: 0px;\n  left: 0px;\n  pointer-events: none;\n  outline: 1px solid var(--dv-tab-divider-color) !important;\n  outline-offset: -1px;\n  z-index: 5;\n}\n.dv-tab.dv-tab-dragging .dv-default-tab-action {\n  background-color: var(--dv-activegroup-visiblepanel-tab-color);\n}\n.dv-tab.dv-active-tab .dv-default-tab .dv-default-tab-action {\n  visibility: visible;\n}\n.dv-tab.dv-inactive-tab .dv-default-tab .dv-default-tab-action {\n  visibility: hidden;\n}\n.dv-tab.dv-inactive-tab .dv-default-tab:hover .dv-default-tab-action {\n  visibility: visible;\n}\n@media (hover: none) {\n  .dv-tab.dv-inactive-tab .dv-default-tab .dv-default-tab-action {\n    visibility: visible;\n  }\n}\n.dv-tab .dv-default-tab {\n  position: relative;\n  height: 100%;\n  width: 100%;\n  display: flex;\n  align-items: center;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n.dv-tab .dv-default-tab .dv-default-tab-content {\n  flex-grow: 1;\n  margin-right: 4px;\n}\n.dv-tab .dv-default-tab .dv-default-tab-action {\n  padding: 4px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  box-sizing: border-box;\n  border: none;\n  background: none;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n}\n.dv-tab .dv-default-tab .dv-default-tab-action:hover {\n  border-radius: 2px;\n  background-color: var(--dv-icon-hover-background-color);\n}\n@media (pointer: coarse) {\n  .dv-tab .dv-default-tab .dv-default-tab-action {\n    padding: 8px;\n  }\n}\n.dv-tabs-overflow-dropdown-default {\n  height: 100%;\n  box-sizing: border-box;\n  color: var(--dv-activegroup-hiddenpanel-tab-color);\n  margin: var(--dv-tab-margin);\n  display: flex;\n  align-items: center;\n  flex-shrink: 0;\n  padding: 0.25rem 0.5rem;\n  cursor: pointer;\n}\n.dv-tabs-overflow-dropdown-default > span {\n  padding-left: 0.25rem;\n}\n.dv-tabs-overflow-dropdown-default > svg {\n  transform: rotate(90deg);\n}\n.dv-tabs-overflow-dropdown-default:hover {\n  border-radius: 2px;\n  background-color: var(--dv-icon-hover-background-color);\n}\n.dv-tabs-container {\n  display: flex;\n  position: relative;\n  height: 100%;\n  overflow: auto;\n  scrollbar-width: thin;\n  /**\n   * Multi-row (wrapping) tabs. Inert until the `MultiRowTabsModule` toggles\n   * `.dv-tabs-container--wrap` on this element (`overflow.mode: \'wrap\'`):\n   * tabs wrap onto multiple rows instead of clipping into the dropdown, and\n   * the strip grows to fit (the header grows via the `:has()` rule in\n   * tabsContainer.scss; the free header-aware content-sizing seam then shrinks\n   * the content area to match). Restricted to horizontal headers in v1.\n   */\n}\n.dv-tabs-container.dv-tabs-container--wrap:not(.dv-tabs-container-vertical) {\n  flex-wrap: wrap;\n  height: auto;\n  overflow: visible;\n  align-content: flex-start;\n}\n.dv-tabs-container.dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: var(--dv-tabs-and-actions-container-height);\n}\n.dv-tabs-container.dv-tabs-container--wrap:not(.dv-tabs-container-vertical).dv-tabs-container--wrap-capped {\n  max-height: calc(var(--dv-tabs-and-actions-container-height) * var(--dv-max-tab-rows));\n  overflow: hidden;\n}\n.dv-tabs-container.dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab--reorder-before::after,\n.dv-tabs-container.dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab--reorder-after::after {\n  content: "";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  width: 2px;\n  z-index: 10;\n  pointer-events: none;\n  background-color: var(--dv-drag-over-border-color);\n}\n.dv-tabs-container.dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab--reorder-before::after {\n  left: 0;\n}\n.dv-tabs-container.dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab--reorder-after::after {\n  right: 0;\n}\n.dv-tabs-container {\n  /**\n   * Multi-column (wrapping) tabs for a vertical (edge-group) header: the\n   * mirror of the horizontal rule above with the axes swapped. The main axis\n   * is vertical (bounded by the header height, so overflowing tabs wrap) and\n   * the cross axis is horizontal (grows into additional columns). The header\n   * grows in width via the `:has()` rule in tabsContainer.scss.\n   *\n   * Column flow direction under `writing-mode: vertical-rl` differs\n   * between left and right header positions; this needs visual verification\n   * in a real browser (jsdom lays out neither writing-mode nor flex-wrap).\n   */\n}\n.dv-tabs-container.dv-tabs-container--wrap.dv-tabs-container-vertical {\n  flex-wrap: wrap;\n  width: auto;\n  height: 100%;\n  max-height: 100%;\n  overflow: visible;\n  align-content: flex-start;\n}\n.dv-tabs-container.dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: var(--dv-tabs-and-actions-container-height);\n  height: var(--dv-wrap-vertical-tab-height, auto);\n}\n.dv-tabs-container.dv-tabs-container--wrap.dv-tabs-container-vertical.dv-tabs-container--wrap-capped {\n  max-width: calc(var(--dv-tabs-and-actions-container-height) * var(--dv-max-tab-rows));\n  overflow: hidden;\n}\n.dv-tabs-container.dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab--reorder-before::after,\n.dv-tabs-container.dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab--reorder-after::after {\n  content: "";\n  position: absolute;\n  left: 0;\n  right: 0;\n  height: 2px;\n  z-index: 10;\n  pointer-events: none;\n  background-color: var(--dv-drag-over-border-color);\n}\n.dv-tabs-container.dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab--reorder-before::after {\n  top: 0;\n}\n.dv-tabs-container.dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab--reorder-after::after {\n  bottom: 0;\n}\n.dv-tabs-container {\n  /* GPU optimizations for smooth scrolling */\n  will-change: scroll-position;\n  transform: translate3d(0, 0, 0);\n  /**\n   * Stop scroll-chaining at the tab strip so that wheel / trackpad\n   * overscroll past the strip\'s edges doesn\'t trigger the browser\'s\n   * swipe-to-go-back-or-forward gesture (and doesn\'t scroll the page\n   * either). `contain` keeps the native bounce visuals; `none` would\n   * also disable them.\n   */\n  overscroll-behavior: contain;\n  /**\n   * Empty space between tabs (and the scrollbar lane) keeps pan-x so a\n   * flick on those areas produces native momentum scroll. The tab and\n   * chip elements themselves opt out (`touch-action: none`) so the\n   * pointer drag source owns the gesture from pointerdown - a flick on\n   * a tab or chip always becomes a drag, regardless of direction.\n   */\n  touch-action: pan-x;\n}\n.dv-tabs-container.dv-tabs-container-vertical {\n  width: 100%;\n  height: fit-content;\n  max-height: 100%;\n  writing-mode: vertical-rl;\n  touch-action: pan-y;\n}\n.dv-tabs-container.dv-horizontal .dv-tab:not(:first-child)::before, .dv-tabs-container.dv-vertical .dv-tab:not(:first-child)::before {\n  content: " ";\n  position: absolute;\n  top: 0;\n  left: 0;\n  z-index: 5;\n  pointer-events: none;\n  background-color: var(--dv-tab-divider-color);\n}\n.dv-tabs-container.dv-horizontal .dv-tab:not(:first-child)::before {\n  width: 1px;\n  height: 100%;\n}\n.dv-tabs-container.dv-vertical .dv-tab:not(:first-child)::before {\n  width: 100%;\n  height: 1px;\n}\n.dv-tabs-container::-webkit-scrollbar {\n  height: 3px;\n}\n.dv-tabs-container {\n  /* Track */\n}\n.dv-tabs-container::-webkit-scrollbar-track {\n  background: transparent;\n}\n.dv-tabs-container {\n  /* Handle */\n}\n.dv-tabs-container::-webkit-scrollbar-thumb {\n  background: var(--dv-tabs-container-scrollbar-color);\n}\n\n.dv-scrollable > .dv-tabs-container {\n  overflow: hidden;\n}\n\n.dv-tab {\n  user-select: none;\n  -webkit-user-select: none;\n  -moz-user-select: none;\n  -ms-user-select: none;\n  outline: none;\n  padding: 0.25rem 0.5rem;\n  cursor: pointer;\n  position: relative;\n  box-sizing: border-box;\n  font-size: var(--dv-tab-font-size);\n  margin: var(--dv-tab-margin);\n  touch-action: none;\n}\n.dv-tab.dv-tab--shifting {\n  will-change: transform, margin-left, margin-right, margin-top, margin-bottom;\n  transition: transform var(--dv-transition-duration, 200ms) ease-out, margin-left var(--dv-transition-duration, 200ms) ease-out, margin-right var(--dv-transition-duration, 200ms) ease-out, margin-top var(--dv-transition-duration, 200ms) ease-out, margin-bottom var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tab.dv-tab--dragging {\n  width: 0 !important;\n  min-width: 0 !important;\n  padding: 0 !important;\n  margin: 0 !important;\n  overflow: hidden;\n  opacity: 0;\n  pointer-events: none;\n  transition: width var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tab.dv-tab--group-collapsed {\n  width: 0 !important;\n  min-width: 0 !important;\n  padding: 0 !important;\n  margin: 0 !important;\n  overflow: hidden;\n  opacity: 0;\n  pointer-events: none;\n  transition: width var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tab.dv-tab--group-expanding {\n  transition: width var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n\n.dv-tab.dv-tab--pinned:has(.dv-tab-pin) {\n  display: flex;\n  align-items: center;\n}\n.dv-tab.dv-tab--pinned .dv-tab-pin {\n  display: inline-flex;\n  align-items: center;\n  flex-shrink: 0;\n  margin-right: 4px;\n  opacity: 0.7;\n  pointer-events: none;\n}\n.dv-tab.dv-tab--pinned .dv-tab-pin .dv-svg {\n  width: 11px;\n  height: 11px;\n}\n.dv-tab.dv-tab--pinned .dv-default-tab {\n  min-width: 0;\n}\n.dv-tab.dv-tab--pinned .dv-default-tab-action {\n  display: none;\n}\n\n.dv-tab.dv-tab--pinned-compact .dv-default-tab-content {\n  display: none;\n}\n.dv-tab.dv-tab--pinned-compact .dv-tab-pin {\n  margin-right: 0;\n}\n\n.dv-tabs-container:not(.dv-tabs-container--wrap):not(.dv-tabs-container-vertical) > .dv-tab.dv-tab--pinned-sticky {\n  position: sticky;\n  left: var(--dv-pinned-sticky-left, 0);\n  z-index: 2;\n}\n\n.dv-tabs-and-actions-container.dv-tabs-and-actions-container--pinned-row {\n  flex-wrap: wrap;\n  height: auto;\n  min-height: var(--dv-tabs-and-actions-container-height);\n  align-content: flex-start;\n}\n.dv-tabs-and-actions-container.dv-tabs-and-actions-container--pinned-row .dv-pinned-row {\n  flex: 0 0 100%;\n  order: -1;\n}\n.dv-tabs-and-actions-container.dv-tabs-and-actions-container--pinned-row .dv-tab.dv-tab--pinned {\n  display: none;\n}\n\n.dv-pinned-row {\n  display: flex;\n  align-items: center;\n  gap: 2px;\n  box-sizing: border-box;\n  width: 100%;\n  min-height: var(--dv-tabs-and-actions-container-height);\n  padding: 2px 4px;\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom: 1px solid var(--dv-tab-divider-color);\n}\n\n.dv-pinned-tab {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  box-sizing: border-box;\n  padding: 0.25rem 0.5rem;\n  font-size: var(--dv-tab-font-size);\n  cursor: pointer;\n  user-select: none;\n  background-color: var(--dv-activegroup-hiddenpanel-tab-background-color);\n  color: var(--dv-activegroup-hiddenpanel-tab-color);\n}\n.dv-pinned-tab.dv-pinned-tab--active {\n  background-color: var(--dv-activegroup-visiblepanel-tab-background-color);\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n}\n.dv-pinned-tab .dv-pinned-tab-label {\n  max-width: 120px;\n  overflow: hidden;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n.dv-pinned-tab .dv-pinned-tab-unpin {\n  flex-shrink: 0;\n  opacity: 0.6;\n}\n.dv-pinned-tab .dv-pinned-tab-unpin:hover {\n  opacity: 1;\n}\n.dv-pinned-tab.dv-pinned-tab--dragging {\n  opacity: 0.5;\n}\n.dv-pinned-tab.dv-pinned-tab--drop-before, .dv-pinned-tab.dv-pinned-tab--drop-after {\n  position: relative;\n}\n.dv-pinned-tab.dv-pinned-tab--drop-before::after, .dv-pinned-tab.dv-pinned-tab--drop-after::after {\n  content: "";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  width: 2px;\n  z-index: 10;\n  pointer-events: none;\n  background-color: var(--dv-drag-over-border-color);\n}\n.dv-pinned-tab.dv-pinned-tab--drop-before::after {\n  left: 0;\n}\n.dv-pinned-tab.dv-pinned-tab--drop-after::after {\n  right: 0;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dv-tab {\n    transition: none !important;\n  }\n  .dv-tab-group-chip {\n    transition: none !important;\n  }\n}\n.dv-tab-group-chip {\n  display: inline-flex;\n  align-items: center;\n  align-self: center;\n  padding: var(--dv-tab-group-chip-padding);\n  margin: 0 8px 0 8px;\n  border-radius: var(--dv-tab-group-chip-border-radius);\n  font-size: var(--dv-tab-group-chip-font-size);\n  cursor: pointer;\n  user-select: none;\n  white-space: nowrap;\n  box-sizing: border-box;\n  line-height: 1;\n  touch-action: none;\n  background-color: var(--dv-tab-group-color);\n  color: white;\n}\n.dv-tab-group-chip.dv-tab-group-chip--accent-off {\n  background-color: transparent;\n  color: inherit;\n}\n.dv-tab-group-chip.dv-tab-group-chip--shifting {\n  will-change: margin-left, margin-top;\n  transition: margin-left var(--dv-transition-duration, 200ms) ease-out, margin-top var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tab-group-chip.dv-tab-group-chip--dragging {\n  width: 0 !important;\n  min-width: 0 !important;\n  padding: 0 !important;\n  margin: 0 !important;\n  overflow: hidden;\n  opacity: 0;\n  pointer-events: none;\n  transition: width var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tab-group-chip .dv-tab-group-chip-label--empty {\n  display: none;\n}\n.dv-tab-group-chip:has(.dv-tab-group-chip-label--empty) {\n  position: relative;\n  width: 12px;\n  height: 12px;\n  padding: 0;\n  border-radius: 50%;\n}\n.dv-tab-group-chip:has(.dv-tab-group-chip-label--empty)::before {\n  content: "";\n  position: absolute;\n  inset: -8px;\n}\n\n.dv-tab-group-underline {\n  position: absolute;\n  bottom: 0;\n  opacity: var(--dv-tab-group-line-opacity);\n  pointer-events: none;\n  z-index: 10;\n}\n\n.dv-tab-group-chip-continuation {\n  position: absolute;\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  opacity: var(--dv-tab-group-line-opacity);\n  pointer-events: none;\n  z-index: 10;\n}\n\n.dv-groupview-header-bottom .dv-tab-group-underline {\n  bottom: auto;\n  top: 0;\n}\n\n.dv-tabs-container-vertical .dv-tab-group-underline {\n  bottom: auto;\n  left: 0;\n}\n\n.dv-tabs-container-vertical .dv-tab-group-chip {\n  margin: 8px 0 8px 0;\n}\n.dv-tabs-container-vertical .dv-tab-group-chip.dv-tab-group-chip--dragging {\n  height: 0 !important;\n  min-height: 0 !important;\n  width: auto !important;\n  min-width: initial !important;\n  transition: height var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tabs-container-vertical .dv-tab {\n  padding: 0.5rem 0.25rem;\n}\n.dv-tabs-container-vertical .dv-tab.dv-tab--group-collapsed {\n  height: 0 !important;\n  min-height: 0 !important;\n  width: auto !important;\n  min-width: initial !important;\n  transition: height var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tabs-container-vertical .dv-tab.dv-tab--group-expanding {\n  transition: height var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n.dv-tabs-container-vertical .dv-tab.dv-tab--dragging {\n  height: 0 !important;\n  min-height: 0 !important;\n  width: auto !important;\n  min-width: initial !important;\n  transition: height var(--dv-transition-duration, 200ms) ease-out, padding var(--dv-transition-duration, 200ms) ease-out, margin var(--dv-transition-duration, 200ms) ease-out, opacity var(--dv-transition-duration, 200ms) ease-out;\n}\n\n.dv-tabs-overflow-container {\n  flex-direction: column;\n  height: unset;\n  font-size: var(--dv-tabs-and-actions-container-font-size);\n  max-height: min(50vh, 400px);\n  overflow-y: auto;\n  border: 1px solid var(--dv-tab-divider-color);\n  background-color: var(--dv-group-view-background-color);\n  /* Scrollbar styling for webkit browsers */\n}\n.dv-tabs-overflow-container::-webkit-scrollbar {\n  width: 6px;\n}\n.dv-tabs-overflow-container::-webkit-scrollbar-track {\n  background: transparent;\n}\n.dv-tabs-overflow-container::-webkit-scrollbar-thumb {\n  background: var(--dv-tabs-container-scrollbar-color);\n  border-radius: 3px;\n}\n.dv-tabs-overflow-container {\n  /* Firefox scrollbar */\n  scrollbar-width: thin;\n}\n.dv-tabs-overflow-container .dv-tab:not(:last-child) {\n  border-bottom: 1px solid var(--dv-tab-divider-color);\n}\n.dv-tabs-overflow-container .dv-active-tab {\n  background-color: var(--dv-activegroup-visiblepanel-tab-background-color);\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n}\n.dv-tabs-overflow-container .dv-inactive-tab {\n  background-color: var(--dv-activegroup-hiddenpanel-tab-background-color);\n  color: var(--dv-activegroup-hiddenpanel-tab-color);\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-group-header {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 8px;\n  font-size: 0.8em;\n  font-weight: 600;\n  color: var(--dv-activegroup-hiddenpanel-tab-color);\n  cursor: pointer;\n  border-bottom: 1px solid var(--dv-tab-divider-color);\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-group-header:hover {\n  background-color: var(--dv-icon-hover-background-color);\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-group-color {\n  display: inline-block;\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n  background-color: var(--dv-tab-group-color);\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-group-label {\n  flex: 1;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-group-collapsed-badge {\n  font-size: 0.75em;\n  font-weight: 400;\n  opacity: 0.7;\n  padding: 1px 4px;\n  border-radius: 3px;\n  background-color: var(--dv-tab-divider-color);\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-pinned-header {\n  cursor: default;\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-pinned-header:hover {\n  background-color: transparent;\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-pinned-header .dv-tabs-overflow-pinned-icon {\n  display: inline-flex;\n  align-items: center;\n  flex-shrink: 0;\n  opacity: 0.7;\n}\n.dv-tabs-overflow-container .dv-tabs-overflow-pinned-header .dv-tabs-overflow-pinned-icon .dv-svg {\n  width: 11px;\n  height: 11px;\n}\n.dv-tabs-overflow-container .dv-tab.dv-tab--grouped {\n  padding-left: 16px;\n}\n\n/*\n * Advanced overflow popover (AdvancedOverflowModule): the same container as the\n * free list, upgraded in place with a search input, a scrollable listbox, and a\n * keyboard-highlighted active row. Styles live in core so the module ships no\n * CSS; they are inert unless the module renders this body.\n */\n.dv-tabs-overflow-container.dv-tabs-overflow-advanced {\n  min-width: 220px;\n}\n.dv-tabs-overflow-container.dv-tabs-overflow-advanced .dv-tabs-overflow-search {\n  box-sizing: border-box;\n  width: 100%;\n  padding: 6px 8px;\n  border: none;\n  border-bottom: 1px solid var(--dv-tab-divider-color);\n  outline: none;\n  font-size: inherit;\n  font-family: inherit;\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n  background-color: var(--dv-group-view-background-color);\n}\n.dv-tabs-overflow-container.dv-tabs-overflow-advanced .dv-tabs-overflow-list {\n  display: flex;\n  flex-direction: column;\n  outline: none;\n}\n.dv-tabs-overflow-container.dv-tabs-overflow-advanced .dv-tab.dv-tabs-overflow-option--focused {\n  outline: 1px solid var(--dv-tab-divider-color);\n  outline-offset: -1px;\n  background-color: var(--dv-icon-hover-background-color);\n}\n.dv-tabs-and-actions-container {\n  display: flex;\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  flex-shrink: 0;\n  box-sizing: border-box;\n  height: var(--dv-tabs-and-actions-container-height);\n  font-size: var(--dv-tabs-and-actions-container-font-size);\n  /**\n   * Multi-row (wrapping) tabs: when the tab list wraps onto multiple rows\n   * (`.dv-tabs-container--wrap`, toggled by the `MultiRowTabsModule`), the\n   * header grows to fit instead of clipping. Inert otherwise: the single-row\n   * fixed height above is unchanged.\n   */\n}\n.dv-tabs-and-actions-container:has(.dv-tabs-container--wrap) {\n  height: auto;\n  min-height: var(--dv-tabs-and-actions-container-height);\n  align-items: flex-start;\n}\n.dv-tabs-and-actions-container:has(.dv-tabs-container--wrap) > .dv-pre-actions-container,\n.dv-tabs-and-actions-container:has(.dv-tabs-container--wrap) > .dv-left-actions-container,\n.dv-tabs-and-actions-container:has(.dv-tabs-container--wrap) > .dv-right-actions-container,\n.dv-tabs-and-actions-container:has(.dv-tabs-container--wrap) > .dv-void-container {\n  height: var(--dv-tabs-and-actions-container-height);\n}\n.dv-tabs-and-actions-container.dv-single-tab.dv-full-width-single-tab .dv-scrollable {\n  flex-grow: 1;\n}\n.dv-tabs-and-actions-container.dv-single-tab.dv-full-width-single-tab .dv-tabs-container {\n  flex-grow: 1;\n}\n.dv-tabs-and-actions-container.dv-single-tab.dv-full-width-single-tab .dv-tabs-container .dv-tab {\n  flex-grow: 1;\n  padding: 0px;\n}\n.dv-tabs-and-actions-container.dv-single-tab.dv-full-width-single-tab .dv-void-container {\n  flex-grow: 0;\n}\n.dv-tabs-and-actions-container .dv-void-container {\n  display: flex;\n  flex-grow: 1;\n  user-select: none;\n  -webkit-user-select: none;\n  -moz-user-select: none;\n  -ms-user-select: none;\n  touch-action: none;\n}\n.dv-tabs-and-actions-container .dv-void-container.dv-draggable {\n  cursor: grab;\n}\n.dv-tabs-and-actions-container .dv-right-actions-container {\n  display: flex;\n}\n.dv-tabs-and-actions-container .dv-right-actions-container.dv-right-actions-container-vertical {\n  flex-direction: column;\n}\n.dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  flex-direction: column;\n  height: auto;\n  width: var(--dv-tabs-and-actions-container-height);\n}\n.dv-tabs-and-actions-container.dv-groupview-header-vertical:has(.dv-tabs-container--wrap) {\n  width: auto;\n  min-width: var(--dv-tabs-and-actions-container-height);\n}\n.dv-tabs-and-actions-container.dv-groupview-header-vertical:has(.dv-tabs-container--wrap) > .dv-scrollable {\n  align-self: stretch;\n}\n.dv-watermark {\n  display: flex;\n  height: 100%;\n}\n.dv-dockview {\n  position: relative;\n  background-color: var(--dv-group-view-background-color);\n}\n.dv-dockview .dv-watermark-container {\n  position: absolute;\n  top: 0px;\n  left: 0px;\n  height: 100%;\n  width: 100%;\n  z-index: 1;\n}\n.dv-dockview .dv-overlay-render-container {\n  position: relative;\n}\n\n.dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  background-color: var(--dv-activegroup-visiblepanel-tab-background-color);\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n}\n.dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab {\n  background-color: var(--dv-activegroup-hiddenpanel-tab-background-color);\n  color: var(--dv-activegroup-hiddenpanel-tab-color);\n}\n.dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  background-color: var(--dv-inactivegroup-visiblepanel-tab-background-color);\n  color: var(--dv-inactivegroup-visiblepanel-tab-color);\n}\n.dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab {\n  background-color: var(--dv-inactivegroup-hiddenpanel-tab-background-color);\n  color: var(--dv-inactivegroup-hiddenpanel-tab-color);\n}\n\n/**\n * when a tab is dragged we lose the above stylings because they are conditional on parent elements\n * therefore we also set some stylings for the dragging event\n **/\n.dv-tab.dv-tab-dragging {\n  background-color: var(--dv-activegroup-visiblepanel-tab-background-color);\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n}\n\n.dv-keyboard-docking-hint {\n  position: absolute;\n  left: 50%;\n  bottom: 8px;\n  transform: translateX(-50%);\n  z-index: 100;\n  max-width: 90%;\n  padding: 4px 10px;\n  border-radius: 4px;\n  font-size: 12px;\n  line-height: 1.4;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  pointer-events: none;\n  background-color: var(--dv-context-menu-background-color, var(--dv-group-view-background-color));\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n  border: 1px solid var(--dv-tab-divider-color);\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);\n}\n.dv-groupview {\n  display: flex;\n  height: 100%;\n  background-color: var(--dv-group-view-background-color);\n  overflow: hidden;\n  flex-direction: column;\n}\n.dv-groupview:focus {\n  outline: none;\n}\n.dv-groupview > .dv-content-container {\n  flex-grow: 1;\n  min-height: 0;\n  outline: none;\n}\n.dv-groupview.dv-groupview-header-bottom {\n  flex-direction: column-reverse;\n}\n.dv-groupview.dv-groupview-header-left {\n  flex-direction: row;\n}\n.dv-groupview.dv-groupview-header-right {\n  flex-direction: row-reverse;\n}\n.dv-groupview.dv-groupview-edge.dv-edge-collapsed > .dv-content-container {\n  display: none;\n}\n.dv-root-wrapper {\n  height: 100%;\n  width: 100%;\n}\n.dv-grid-view,\n.dv-branch-node {\n  height: 100%;\n  width: 100%;\n}\n.dv-debug .dv-resize-container .dv-resize-handle-top {\n  background-color: red;\n}\n.dv-debug .dv-resize-container .dv-resize-handle-bottom {\n  background-color: green;\n}\n.dv-debug .dv-resize-container .dv-resize-handle-left {\n  background-color: yellow;\n}\n.dv-debug .dv-resize-container .dv-resize-handle-right {\n  background-color: blue;\n}\n.dv-debug .dv-resize-container .dv-resize-handle-topleft,\n.dv-debug .dv-resize-container .dv-resize-handle-topright,\n.dv-debug .dv-resize-container .dv-resize-handle-bottomleft,\n.dv-debug .dv-resize-container .dv-resize-handle-bottomright {\n  background-color: cyan;\n}\n\n.dv-floating-overlay-host {\n  position: absolute;\n  pointer-events: none;\n}\n.dv-floating-overlay-host > .dv-resize-container {\n  pointer-events: auto;\n}\n\n.dv-edge-peek {\n  background-color: var(--dv-group-view-background-color);\n  border: 1px solid var(--dv-separator-border);\n  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);\n}\n.dv-edge-peek > * {\n  width: 100%;\n  height: 100%;\n  overflow: auto;\n}\n\n.dv-auto-edge-band {\n  position: absolute;\n  pointer-events: none;\n  z-index: var(--dv-overlay-z-index, 999);\n  background-color: var(--dv-edge-dock-indicator-color);\n  box-shadow: 0 0 6px var(--dv-edge-dock-indicator-color);\n}\n\n.dv-edge-peek-header {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  padding: 0 4px 0 8px;\n  box-sizing: border-box;\n  background-color: var(--dv-group-view-background-color);\n  border: 1px solid var(--dv-separator-border);\n  border-bottom: none;\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n  font-size: 12px;\n}\n.dv-edge-peek-header .dv-edge-peek-pin,\n.dv-edge-peek-header .dv-edge-peek-close {\n  flex: 0 0 auto;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  box-sizing: border-box;\n  cursor: pointer;\n  border: none;\n  padding: 4px;\n  color: inherit;\n  background: transparent;\n  outline: none;\n}\n.dv-edge-peek-header .dv-edge-peek-pin:hover,\n.dv-edge-peek-header .dv-edge-peek-close:hover {\n  border-radius: 2px;\n  background-color: var(--dv-icon-hover-background-color);\n}\n.dv-edge-peek-header .dv-edge-peek-pin:focus-visible,\n.dv-edge-peek-header .dv-edge-peek-close:focus-visible {\n  border-radius: 2px;\n  outline: 1px solid var(--dv-tab-divider-color);\n  outline-offset: -1px;\n}\n\n.dv-edge-peek-title {\n  flex: 1 1 auto;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dv-resize-container > .dv-grid-view {\n  width: 100%;\n  height: 100%;\n}\n\n.dv-resize-container-with-titlebar {\n  display: flex;\n  flex-direction: column;\n}\n.dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  flex: 0 0 auto;\n}\n.dv-resize-container-with-titlebar > .dv-grid-view {\n  height: auto;\n  flex: 1 1 0;\n  min-height: 0;\n}\n\n.dv-floating-titlebar {\n  box-sizing: border-box;\n  flex-shrink: 0;\n  height: var(--dv-floating-titlebar-height, 22px);\n  background-color: var(--dv-floating-titlebar-background-color);\n  border-bottom: var(--dv-floating-titlebar-border-bottom, none);\n  user-select: none;\n  touch-action: none;\n}\n.dv-floating-titlebar.dv-draggable {\n  cursor: grab;\n}\n\n.dv-resize-container {\n  --dv-overlay-z-index: var(--dv-overlay-z-index, 999);\n  position: absolute;\n  z-index: calc(var(--dv-overlay-z-index) - 2);\n  background-color: var(--dv-group-view-background-color);\n  border: var(--dv-floating-border);\n  box-shadow: var(--dv-floating-box-shadow);\n  /* GPU optimizations for floating group movement */\n  will-change: transform, opacity;\n  transform: translate3d(0, 0, 0);\n  backface-visibility: hidden;\n}\n.dv-resize-container.dv-hidden {\n  display: none;\n}\n.dv-resize-container.dv-resize-container-dragging {\n  opacity: var(--dv-floating-group-dragging-opacity);\n  /* Enhanced GPU acceleration during drag */\n  will-change: transform, opacity;\n}\n.dv-resize-container .dv-resize-handle-top,\n.dv-resize-container .dv-resize-handle-bottom,\n.dv-resize-container .dv-resize-handle-left,\n.dv-resize-container .dv-resize-handle-right,\n.dv-resize-container .dv-resize-handle-topleft,\n.dv-resize-container .dv-resize-handle-topright,\n.dv-resize-container .dv-resize-handle-bottomleft,\n.dv-resize-container .dv-resize-handle-bottomright {\n  touch-action: none;\n}\n.dv-resize-container .dv-resize-handle-top {\n  height: 4px;\n  width: calc(100% - 8px);\n  left: 4px;\n  top: -2px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: ns-resize;\n}\n.dv-resize-container .dv-resize-handle-bottom {\n  height: 4px;\n  width: calc(100% - 8px);\n  left: 4px;\n  bottom: -2px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: ns-resize;\n}\n.dv-resize-container .dv-resize-handle-left {\n  height: calc(100% - 8px);\n  width: 4px;\n  left: -2px;\n  top: 4px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: ew-resize;\n}\n.dv-resize-container .dv-resize-handle-right {\n  height: calc(100% - 8px);\n  width: 4px;\n  right: -2px;\n  top: 4px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: ew-resize;\n}\n.dv-resize-container .dv-resize-handle-topleft {\n  height: 4px;\n  width: 4px;\n  top: -2px;\n  left: -2px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: nw-resize;\n}\n.dv-resize-container .dv-resize-handle-topright {\n  height: 4px;\n  width: 4px;\n  right: -2px;\n  top: -2px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: ne-resize;\n}\n.dv-resize-container .dv-resize-handle-bottomleft {\n  height: 4px;\n  width: 4px;\n  left: -2px;\n  bottom: -2px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: sw-resize;\n}\n.dv-resize-container .dv-resize-handle-bottomright {\n  height: 4px;\n  width: 4px;\n  right: -2px;\n  bottom: -2px;\n  z-index: var(--dv-overlay-z-index);\n  position: absolute;\n  cursor: se-resize;\n}\n@media (pointer: coarse) {\n  .dv-resize-container .dv-resize-handle-top,\n  .dv-resize-container .dv-resize-handle-bottom {\n    height: 16px;\n    width: calc(100% - 48px);\n    left: 24px;\n  }\n  .dv-resize-container .dv-resize-handle-top {\n    top: -10px;\n  }\n  .dv-resize-container .dv-resize-handle-bottom {\n    bottom: -10px;\n  }\n  .dv-resize-container .dv-resize-handle-left,\n  .dv-resize-container .dv-resize-handle-right {\n    width: 16px;\n    height: calc(100% - 48px);\n    top: 24px;\n  }\n  .dv-resize-container .dv-resize-handle-left {\n    left: -10px;\n  }\n  .dv-resize-container .dv-resize-handle-right {\n    right: -10px;\n  }\n  .dv-resize-container .dv-resize-handle-topleft,\n  .dv-resize-container .dv-resize-handle-topright,\n  .dv-resize-container .dv-resize-handle-bottomleft,\n  .dv-resize-container .dv-resize-handle-bottomright {\n    height: 24px;\n    width: 24px;\n  }\n  .dv-resize-container .dv-resize-handle-topleft {\n    top: -12px;\n    left: -12px;\n  }\n  .dv-resize-container .dv-resize-handle-topright {\n    top: -12px;\n    right: -12px;\n  }\n  .dv-resize-container .dv-resize-handle-bottomleft {\n    bottom: -12px;\n    left: -12px;\n  }\n  .dv-resize-container .dv-resize-handle-bottomright {\n    bottom: -12px;\n    right: -12px;\n  }\n}\n\n.dv-smart-guides {\n  pointer-events: none;\n  z-index: calc(var(--dv-overlay-z-index, 999) + 100);\n}\n\n.dv-smart-guide {\n  background-color: var(--dv-smart-guides-color, #1f9cf0);\n}\n\n.dv-smart-guide-preview {\n  box-sizing: border-box;\n  background-color: var(--dv-smart-guides-preview-color, rgba(31, 156, 240, 0.18));\n  border: 1px solid var(--dv-smart-guides-color, #1f9cf0);\n}\n.dv-render-overlay {\n  --dv-overlay-z-index: var(--dv-overlay-z-index, 999);\n  position: absolute;\n  z-index: 1;\n  width: 100%;\n  height: 100%;\n  contain: layout paint;\n  isolation: isolate;\n  /* GPU optimizations */\n  will-change: transform;\n  transform: translate3d(0, 0, 0);\n  backface-visibility: hidden;\n}\n.dv-render-overlay.dv-render-overlay-float {\n  z-index: calc(var(--dv-overlay-z-index) - 1);\n}\n\n.dv-debug .dv-render-overlay {\n  outline: 1px solid red;\n  outline-offset: -1;\n}\n.dv-pane-container {\n  height: 100%;\n  width: 100%;\n}\n.dv-pane-container.dv-animated .dv-view {\n  /* GPU optimizations for smooth pane animations */\n  will-change: transform;\n  transform: translate3d(0, 0, 0);\n  backface-visibility: hidden;\n  transition: transform 0.15s ease-out;\n}\n.dv-pane-container .dv-view {\n  overflow: hidden;\n  display: flex;\n  flex-direction: column;\n  padding: 0px !important;\n}\n.dv-pane-container .dv-view:not(:first-child)::before {\n  background-color: transparent !important;\n}\n.dv-pane-container .dv-view:not(:first-child) .dv-pane > .dv-pane-header {\n  border-top: 1px solid var(--dv-paneview-header-border-color);\n}\n.dv-pane-container .dv-view .dv-default-header {\n  background-color: var(--dv-group-view-background-color);\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n  display: flex;\n  padding: 0px 8px;\n  cursor: pointer;\n}\n.dv-pane-container .dv-view .dv-default-header .dv-pane-header-icon {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n}\n.dv-pane-container .dv-view .dv-default-header > span {\n  padding-left: 8px;\n  flex-grow: 1;\n}\n.dv-pane-container:first-of-type > .dv-pane > .dv-pane-header {\n  border-top: none !important;\n}\n.dv-pane-container .dv-pane {\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n  height: 100%;\n}\n.dv-pane-container .dv-pane .dv-pane-header {\n  box-sizing: border-box;\n  user-select: none;\n  position: relative;\n  outline: none;\n}\n.dv-pane-container .dv-pane .dv-pane-header.dv-pane-draggable {\n  cursor: pointer;\n}\n.dv-pane-container .dv-pane .dv-pane-header:focus-visible:before, .dv-pane-container .dv-pane .dv-pane-header:has(:focus-visible):before {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  z-index: 5;\n  content: "";\n  pointer-events: none;\n  outline: 1px solid;\n  outline-width: -1px;\n  outline-style: solid;\n  outline-offset: -1px;\n  outline-color: var(--dv-paneview-active-outline-color);\n}\n.dv-pane-container .dv-pane .dv-pane-body {\n  overflow-y: auto;\n  overflow-x: hidden;\n  flex-grow: 1;\n  position: relative;\n  outline: none;\n}\n.dv-pane-container .dv-pane .dv-pane-body:focus-visible:before, .dv-pane-container .dv-pane .dv-pane-body:has(:focus-visible):before {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  height: 100%;\n  z-index: 5;\n  content: "";\n  pointer-events: none;\n  outline: 1px solid;\n  outline-width: -1px;\n  outline-style: solid;\n  outline-offset: -1px;\n  outline-color: var(--dv-paneview-active-outline-color);\n}\n.dv-scrollable {\n  position: relative;\n  overflow: hidden;\n}\n.dv-scrollable .dv-scrollbar {\n  position: absolute;\n  border-radius: 2px;\n  background-color: transparent;\n  /* GPU optimizations */\n  will-change: background-color, transform;\n  transform: translate3d(0, 0, 0);\n  backface-visibility: hidden;\n  transition-property: background-color;\n  transition-timing-function: ease-in-out;\n  transition-duration: 1s;\n  transition-delay: 0s;\n}\n.dv-scrollable .dv-scrollbar-horizontal {\n  bottom: 0px;\n  left: 0px;\n  height: 4px;\n}\n.dv-scrollable .dv-scrollbar-vertical {\n  right: 0px;\n  top: 0px;\n  width: 4px;\n}\n.dv-scrollable:hover .dv-scrollbar, .dv-scrollable.dv-scrollable-resizing .dv-scrollbar, .dv-scrollable.dv-scrollable-scrolling .dv-scrollbar {\n  background-color: var(--dv-scrollbar-background-color, rgba(255, 255, 255, 0.25));\n}\n.dv-debug .dv-split-view-container .dv-sash-container .dv-sash.dv-enabled {\n  background-color: black;\n}\n.dv-debug .dv-split-view-container .dv-sash-container .dv-sash.dv-disabled {\n  background-color: orange;\n}\n.dv-debug .dv-split-view-container .dv-sash-container .dv-sash.dv-maximum {\n  background-color: green;\n}\n.dv-debug .dv-split-view-container .dv-sash-container .dv-sash.dv-minimum {\n  background-color: red;\n}\n\n.dv-split-view-container {\n  position: relative;\n  overflow: hidden;\n  height: 100%;\n  width: 100%;\n}\n.dv-split-view-container.dv-splitview-disabled > .dv-sash-container > .dv-sash {\n  pointer-events: none;\n}\n.dv-split-view-container.dv-animation .dv-view,\n.dv-split-view-container.dv-animation .dv-sash {\n  /* GPU optimizations for smooth animations */\n  will-change: transform;\n  transform: translate3d(0, 0, 0);\n  backface-visibility: hidden;\n  transition: transform 0.15s ease-out;\n}\n.dv-split-view-container.dv-horizontal {\n  height: 100%;\n}\n.dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash {\n  height: 100%;\n  width: 4px;\n}\n.dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash.dv-enabled {\n  cursor: ew-resize;\n}\n.dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash.dv-disabled {\n  cursor: default;\n}\n.dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash.dv-maximum {\n  cursor: w-resize;\n}\n.dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash.dv-minimum {\n  cursor: e-resize;\n}\n.dv-split-view-container.dv-horizontal > .dv-view-container > .dv-view:not(:first-child)::before {\n  height: 100%;\n  width: 1px;\n}\n.dv-split-view-container.dv-vertical {\n  width: 100%;\n}\n.dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash {\n  width: 100%;\n  height: 4px;\n}\n.dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash.dv-enabled {\n  cursor: ns-resize;\n}\n.dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash.dv-disabled {\n  cursor: default;\n}\n.dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash.dv-maximum {\n  cursor: n-resize;\n}\n.dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash.dv-minimum {\n  cursor: s-resize;\n}\n.dv-split-view-container.dv-vertical > .dv-view-container > .dv-view {\n  width: 100%;\n}\n.dv-split-view-container.dv-vertical > .dv-view-container > .dv-view:not(:first-child)::before {\n  height: 1px;\n  width: 100%;\n}\n.dv-split-view-container .dv-sash-container {\n  height: 100%;\n  width: 100%;\n  position: absolute;\n}\n.dv-split-view-container .dv-sash-container .dv-sash {\n  position: absolute;\n  z-index: 99;\n  outline: none;\n  user-select: none;\n  -webkit-user-select: none;\n  -moz-user-select: none;\n  -ms-user-select: none;\n  touch-action: none;\n  background-color: var(--dv-sash-color, transparent);\n}\n.dv-split-view-container .dv-sash-container .dv-sash:not(.disabled):active, .dv-split-view-container .dv-sash-container .dv-sash:not(.disabled):hover {\n  background-color: var(--dv-active-sash-color, transparent);\n  transition-property: background-color;\n  transition-timing-function: ease-in-out;\n  transition-duration: var(--dv-active-sash-transition-duration, 0.1s);\n  transition-delay: var(--dv-active-sash-transition-delay, 0.5s);\n}\n@media (pointer: coarse) {\n  .dv-split-view-container .dv-sash-container > .dv-sash:not(.dv-disabled)::before {\n    content: "";\n    position: absolute;\n    background: transparent;\n  }\n  .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {\n    top: 0;\n    bottom: 0;\n    left: -10px;\n    right: -10px;\n  }\n  .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {\n    left: 0;\n    right: 0;\n    top: -10px;\n    bottom: -10px;\n  }\n}\n.dv-split-view-container .dv-view-container {\n  position: relative;\n  height: 100%;\n  width: 100%;\n}\n.dv-split-view-container .dv-view-container .dv-view {\n  height: 100%;\n  box-sizing: border-box;\n  overflow: auto;\n  position: absolute;\n}\n.dv-split-view-container.dv-separator-border .dv-view:not(:first-child)::before {\n  content: " ";\n  position: absolute;\n  top: 0;\n  left: 0;\n  z-index: 5;\n  pointer-events: none;\n  background-color: var(--dv-separator-border);\n}\n.dv-svg {\n  display: inline-block;\n  fill: currentcolor;\n  line-height: 1;\n  stroke: currentcolor;\n  stroke-width: 0;\n}\n.dockview-theme-dark {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-dark .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-dark {\n  color-scheme: dark;\n  --dv-group-view-background-color: #1e1e1e;\n  --dv-tabs-and-actions-container-background-color: #252526;\n  --dv-activegroup-visiblepanel-tab-background-color: #1e1e1e;\n  --dv-activegroup-hiddenpanel-tab-background-color: #2d2d2d;\n  --dv-inactivegroup-visiblepanel-tab-background-color: #1e1e1e;\n  --dv-inactivegroup-hiddenpanel-tab-background-color: #2d2d2d;\n  --dv-tab-divider-color: #1e1e1e;\n  --dv-activegroup-visiblepanel-tab-color: white;\n  --dv-activegroup-hiddenpanel-tab-color: #969696;\n  --dv-inactivegroup-visiblepanel-tab-color: #8f8f8f;\n  --dv-inactivegroup-hiddenpanel-tab-color: #626262;\n  --dv-separator-border: rgb(68, 68, 68);\n  --dv-paneview-header-border-color: rgba(204, 204, 204, 0.2);\n}\n\n.dockview-theme-light {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-light .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-light {\n  color-scheme: light;\n  --dv-group-view-background-color: white;\n  --dv-tabs-and-actions-container-background-color: #f3f3f3;\n  --dv-activegroup-visiblepanel-tab-background-color: white;\n  --dv-activegroup-hiddenpanel-tab-background-color: #ececec;\n  --dv-inactivegroup-visiblepanel-tab-background-color: white;\n  --dv-inactivegroup-hiddenpanel-tab-background-color: #ececec;\n  --dv-tab-divider-color: white;\n  --dv-activegroup-visiblepanel-tab-color: rgb(51, 51, 51);\n  --dv-activegroup-hiddenpanel-tab-color: rgba(51, 51, 51, 0.7);\n  --dv-inactivegroup-visiblepanel-tab-color: rgba(51, 51, 51, 0.7);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(51, 51, 51, 0.35);\n  --dv-separator-border: rgba(128, 128, 128, 0.35);\n  --dv-paneview-header-border-color: rgb(51, 51, 51);\n  --dv-scrollbar-background-color: rgba(0, 0, 0, 0.25);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);\n  --dv-floating-border: 1px solid rgba(0, 0, 0, 0.1);\n}\n\n.dockview-theme-vs {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-vs .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-vs {\n  color-scheme: dark;\n  --dv-group-view-background-color: #1e1e1e;\n  --dv-tabs-and-actions-container-background-color: #252526;\n  --dv-activegroup-visiblepanel-tab-background-color: #1e1e1e;\n  --dv-activegroup-hiddenpanel-tab-background-color: #2d2d2d;\n  --dv-inactivegroup-visiblepanel-tab-background-color: #1e1e1e;\n  --dv-inactivegroup-hiddenpanel-tab-background-color: #2d2d2d;\n  --dv-tab-divider-color: #1e1e1e;\n  --dv-activegroup-visiblepanel-tab-color: white;\n  --dv-activegroup-hiddenpanel-tab-color: #969696;\n  --dv-inactivegroup-visiblepanel-tab-color: #8f8f8f;\n  --dv-inactivegroup-hiddenpanel-tab-color: #626262;\n  --dv-separator-border: rgb(68, 68, 68);\n  --dv-paneview-header-border-color: rgba(204, 204, 204, 0.2);\n  --dv-tabs-and-actions-container-background-color: #2d2d30;\n  --dv-tabs-and-actions-container-height: 20px;\n  --dv-tabs-and-actions-container-font-size: 11px;\n  --dv-activegroup-visiblepanel-tab-background-color: #007acc;\n  --dv-inactivegroup-visiblepanel-tab-background-color: #3f3f46;\n  --dv-activegroup-visiblepanel-tab-color: white;\n  --dv-activegroup-hiddenpanel-tab-color: white;\n  --dv-inactivegroup-visiblepanel-tab-color: white;\n  --dv-inactivegroup-hiddenpanel-tab-color: white;\n}\n.dockview-theme-vs .dv-groupview.dv-active-group > .dv-tabs-and-actions-container {\n  box-sizing: content-box;\n  border-bottom: 2px solid var(--dv-activegroup-visiblepanel-tab-background-color);\n}\n.dockview-theme-vs .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tab.dv-active-tab {\n  border-top: 2px solid var(--dv-activegroup-visiblepanel-tab-background-color);\n}\n.dockview-theme-vs .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tab.dv-inactive-tab {\n  border-top: 2px solid var(--dv-activegroup-hiddenpanel-tab-background-color);\n}\n.dockview-theme-vs .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container {\n  box-sizing: content-box;\n  border-bottom: 2px solid var(--dv-inactivegroup-visiblepanel-tab-background-color);\n}\n.dockview-theme-vs .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tab.dv-active-tab {\n  border-top: 2px solid var(--dv-inactivegroup-visiblepanel-tab-background-color);\n}\n.dockview-theme-vs .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tab.dv-inactive-tab {\n  border-top: 2px solid var(--dv-inactivegroup-hiddenpanel-tab-background-color);\n}\n\n.dockview-theme-abyss {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-abyss .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-abyss {\n  color-scheme: dark;\n  --dv-color-abyss-dark: #000c18;\n  --dv-color-abyss: #10192c;\n  --dv-color-abyss-light: #1c1c2a;\n  --dv-color-abyss-lighter: #2b2b4a;\n  --dv-color-abyss-accent: rgb(91, 30, 207);\n  --dv-color-abyss-primary-text: white;\n  --dv-color-abyss-secondary-text: rgb(148, 151, 169);\n  --dv-group-view-background-color: var(--dv-color-abyss-dark);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-abyss-light\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-abyss-dark\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(--dv-color-abyss);\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-abyss-dark\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--dv-color-abyss);\n  --dv-tab-divider-color: var(--dv-color-abyss-lighter);\n  --dv-activegroup-visiblepanel-tab-color: white;\n  --dv-activegroup-hiddenpanel-tab-color: rgba(255, 255, 255, 0.5);\n  --dv-inactivegroup-visiblepanel-tab-color: rgba(255, 255, 255, 0.5);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(255, 255, 255, 0.25);\n  --dv-separator-border: var(--dv-color-abyss-lighter);\n  --dv-paneview-header-border-color: var(--dv-color-abyss-lighter);\n  --dv-paneview-active-outline-color: #596f99;\n}\n\n.dockview-theme-dracula {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-dracula .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-dracula {\n  color-scheme: dark;\n  --dv-group-view-background-color: #282a36;\n  --dv-tabs-and-actions-container-background-color: #191a21;\n  --dv-activegroup-visiblepanel-tab-background-color: #282a36;\n  --dv-activegroup-hiddenpanel-tab-background-color: #21222c;\n  --dv-inactivegroup-visiblepanel-tab-background-color: #282a36;\n  --dv-inactivegroup-hiddenpanel-tab-background-color: #21222c;\n  --dv-tab-divider-color: #191a21;\n  --dv-activegroup-visiblepanel-tab-color: rgb(248, 248, 242);\n  --dv-activegroup-hiddenpanel-tab-color: rgb(98, 114, 164);\n  --dv-inactivegroup-visiblepanel-tab-color: rgba(248, 248, 242, 0.5);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(98, 114, 164, 0.5);\n  --dv-separator-border: #bd93f9;\n  --dv-paneview-header-border-color: #bd93f9;\n  --dv-paneview-active-outline-color: #6272a4;\n}\n.dockview-theme-dracula .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-dracula .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 1px;\n  background-color: #94527e;\n  z-index: 999;\n}\n.dockview-theme-dracula .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-dracula .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 1px;\n  background-color: #5e3d5a;\n  z-index: 999;\n}\n\n.dockview-theme-nord {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-nord .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-nord {\n  color-scheme: dark;\n  --dv-color-nord-polar-0: #2e3440;\n  --dv-color-nord-polar-1: #3b4252;\n  --dv-color-nord-polar-2: #434c5e;\n  --dv-color-nord-polar-3: #4c566a;\n  --dv-color-nord-frost: #88c0d0;\n  --dv-color-nord-frost-2: #81a1c1;\n  --dv-color-nord-snow-0: #eceff4;\n  --dv-color-nord-snow-1: #d8dee9;\n  --dv-group-view-background-color: var(--dv-color-nord-polar-0);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-nord-polar-1\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-nord-polar-0\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-nord-polar-2\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-nord-polar-1\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-nord-polar-2\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-nord-snow-0);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-nord-snow-1);\n  --dv-inactivegroup-visiblepanel-tab-color: #8a9bbf;\n  --dv-inactivegroup-hiddenpanel-tab-color: #5e6f8e;\n  --dv-separator-border: var(--dv-color-nord-polar-3);\n  --dv-paneview-active-outline-color: var(--dv-color-nord-frost);\n  --dv-active-sash-color: var(--dv-color-nord-frost);\n  --dv-scrollbar-background-color: rgba(76, 86, 106, 0.5);\n}\n.dockview-theme-nord .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-nord .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 2px;\n  background-color: var(--dv-color-nord-frost);\n  z-index: 999;\n}\n.dockview-theme-nord .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-nord .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 2px;\n  background-color: var(--dv-color-nord-frost-2);\n  z-index: 999;\n}\n\n.dockview-theme-nord-spaced {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-theme-nord-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-theme-nord-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-theme-nord-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-theme-nord-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-theme-nord-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-theme-nord-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-theme-nord-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-theme-nord-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-theme-nord-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-tabs-overflow-container,\n.dockview-theme-nord-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-theme-nord-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-theme-nord-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-theme-nord-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-nord-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-theme-nord-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-nord-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-theme-nord-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-theme-nord-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-nord-spaced {\n  color-scheme: dark;\n  --dv-color-nord-polar-0: #2e3440;\n  --dv-color-nord-polar-1: #3b4252;\n  --dv-color-nord-polar-2: #434c5e;\n  --dv-color-nord-polar-3: #4c566a;\n  --dv-color-nord-frost: #88c0d0;\n  --dv-color-nord-frost-2: #81a1c1;\n  --dv-color-nord-snow-0: #eceff4;\n  --dv-color-nord-snow-1: #d8dee9;\n  --dv-group-view-background-color: var(--dv-color-nord-polar-0);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-nord-polar-1\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-nord-polar-2\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-nord-polar-1\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-nord-polar-2\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-nord-polar-1\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-nord-snow-0);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-nord-snow-1);\n  --dv-inactivegroup-visiblepanel-tab-color: #8a9bbf;\n  --dv-inactivegroup-hiddenpanel-tab-color: #5e6f8e;\n  --dv-separator-border: transparent;\n  --dv-paneview-active-outline-color: var(--dv-color-nord-frost);\n  --dv-active-sash-color: var(--dv-color-nord-frost);\n  --dv-scrollbar-background-color: rgba(76, 86, 106, 0.5);\n  --dv-floating-group-border: 2px solid var(--dv-color-nord-polar-0);\n}\n\n.dockview-theme-catppuccin-mocha {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-catppuccin-mocha .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-catppuccin-mocha {\n  color-scheme: dark;\n  --dv-color-mocha-crust: #11111b;\n  --dv-color-mocha-mantle: #181825;\n  --dv-color-mocha-base: #1e1e2e;\n  --dv-color-mocha-surface0: #313244;\n  --dv-color-mocha-surface1: #45475a;\n  --dv-color-mocha-text: #cdd6f4;\n  --dv-color-mocha-subtext1: #bac2de;\n  --dv-color-mocha-subtext0: #a6adc8;\n  --dv-color-mocha-mauve: #cba6f7;\n  --dv-color-mocha-lavender: #b4befe;\n  --dv-group-view-background-color: var(--dv-color-mocha-base);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-mocha-mantle\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-mocha-base\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-mocha-surface0\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-mocha-mantle\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-mocha-crust\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-mocha-text);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-mocha-subtext1);\n  --dv-inactivegroup-visiblepanel-tab-color: var(--dv-color-mocha-subtext0);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(166, 173, 200, 0.5);\n  --dv-separator-border: var(--dv-color-mocha-surface1);\n  --dv-paneview-active-outline-color: var(--dv-color-mocha-mauve);\n  --dv-active-sash-color: var(--dv-color-mocha-mauve);\n  --dv-scrollbar-background-color: rgba(49, 50, 68, 0.8);\n}\n.dockview-theme-catppuccin-mocha .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-catppuccin-mocha .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 2px;\n  background-color: var(--dv-color-mocha-mauve);\n  z-index: 999;\n}\n.dockview-theme-catppuccin-mocha .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-catppuccin-mocha .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 2px;\n  background-color: rgba(180, 190, 254, 0.4);\n  z-index: 999;\n}\n\n.dockview-theme-catppuccin-mocha-spaced {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-tabs-overflow-container,\n.dockview-theme-catppuccin-mocha-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-catppuccin-mocha-spaced {\n  color-scheme: dark;\n  --dv-color-mocha-crust: #11111b;\n  --dv-color-mocha-mantle: #181825;\n  --dv-color-mocha-base: #1e1e2e;\n  --dv-color-mocha-surface0: #313244;\n  --dv-color-mocha-surface1: #45475a;\n  --dv-color-mocha-text: #cdd6f4;\n  --dv-color-mocha-subtext1: #bac2de;\n  --dv-color-mocha-subtext0: #a6adc8;\n  --dv-color-mocha-mauve: #cba6f7;\n  --dv-color-mocha-lavender: #b4befe;\n  --dv-group-view-background-color: var(--dv-color-mocha-crust);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-mocha-mantle\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-mocha-surface0\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-mocha-mantle\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-mocha-surface0\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-mocha-mantle\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-mocha-text);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-mocha-subtext1);\n  --dv-inactivegroup-visiblepanel-tab-color: var(--dv-color-mocha-subtext0);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(166, 173, 200, 0.5);\n  --dv-separator-border: transparent;\n  --dv-paneview-active-outline-color: var(--dv-color-mocha-mauve);\n  --dv-active-sash-color: var(--dv-color-mocha-mauve);\n  --dv-scrollbar-background-color: rgba(49, 50, 68, 0.8);\n  --dv-floating-group-border: 2px solid var(--dv-color-mocha-crust);\n}\n\n.dockview-theme-monokai {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-monokai .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-monokai {\n  color-scheme: dark;\n  --dv-color-monokai-bg: #272822;\n  --dv-color-monokai-bg-light: #3e3d32;\n  --dv-color-monokai-comment: #75715e;\n  --dv-color-monokai-fg: #f8f8f2;\n  --dv-color-monokai-green: #a6e22e;\n  --dv-group-view-background-color: var(--dv-color-monokai-bg);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-monokai-bg-light\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-monokai-bg\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: #2d2c25;\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-monokai-bg\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: #2d2c25;\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-monokai-fg);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-monokai-comment);\n  --dv-inactivegroup-visiblepanel-tab-color: rgba(248, 248, 242, 0.5);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(117, 113, 94, 0.5);\n  --dv-separator-border: var(--dv-color-monokai-bg-light);\n  --dv-paneview-active-outline-color: var(--dv-color-monokai-green);\n  --dv-active-sash-color: var(--dv-color-monokai-green);\n  --dv-scrollbar-background-color: rgba(117, 113, 94, 0.5);\n}\n.dockview-theme-monokai .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-monokai .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 2px;\n  background-color: var(--dv-color-monokai-green);\n  z-index: 999;\n}\n.dockview-theme-monokai .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {\n  position: relative;\n}\n.dockview-theme-monokai .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  position: absolute;\n  left: 0px;\n  bottom: 0px;\n  content: "";\n  width: 100%;\n  height: 2px;\n  background-color: rgba(166, 226, 46, 0.35);\n  z-index: 999;\n}\n\n.dockview-theme-solarized-light {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-solarized-light .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-solarized-light {\n  color-scheme: light;\n  --dv-color-sol-base3: #fdf6e3;\n  --dv-color-sol-base2: #eee8d5;\n  --dv-color-sol-base1: #93a1a1;\n  --dv-color-sol-base00: #657b83;\n  --dv-color-sol-base01: #586e75;\n  --dv-color-sol-blue: #268bd2;\n  --dv-group-view-background-color: var(--dv-color-sol-base3);\n  --dv-tabs-and-actions-container-background-color: var(--dv-color-sol-base2);\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-sol-base3\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: #e8e2d0;\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-sol-base3\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: #e8e2d0;\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-sol-base01);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-sol-base00);\n  --dv-inactivegroup-visiblepanel-tab-color: var(--dv-color-sol-base1);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(147, 161, 161, 0.6);\n  --dv-separator-border: var(--dv-color-sol-base2);\n  --dv-paneview-active-outline-color: var(--dv-color-sol-blue);\n  --dv-active-sash-color: var(--dv-color-sol-blue);\n  --dv-scrollbar-background-color: rgba(101, 123, 131, 0.25);\n  --dv-drag-over-background-color: rgba(38, 139, 210, 0.15);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);\n  --dv-floating-border: 1px solid rgba(0, 0, 0, 0.1);\n}\n\n.dockview-theme-solarized-light-spaced {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-theme-solarized-light-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-theme-solarized-light-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-theme-solarized-light-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-theme-solarized-light-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-theme-solarized-light-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-theme-solarized-light-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-theme-solarized-light-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-theme-solarized-light-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-tabs-overflow-container,\n.dockview-theme-solarized-light-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-theme-solarized-light-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-theme-solarized-light-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-solarized-light-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-theme-solarized-light-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-solarized-light-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-theme-solarized-light-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-theme-solarized-light-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-solarized-light-spaced {\n  color-scheme: light;\n  --dv-color-sol-base3: #fdf6e3;\n  --dv-color-sol-base2: #eee8d5;\n  --dv-color-sol-base1: #93a1a1;\n  --dv-color-sol-base00: #657b83;\n  --dv-color-sol-base01: #586e75;\n  --dv-color-sol-blue: #268bd2;\n  --dv-drag-over-background-color: rgba(38, 139, 210, 0.1);\n  --dv-group-view-background-color: var(--dv-color-sol-base2);\n  --dv-tabs-and-actions-container-background-color: var(--dv-color-sol-base3);\n  --dv-activegroup-visiblepanel-tab-background-color: #e8e2d0;\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-sol-base3\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: #e8e2d0;\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-sol-base3\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-sol-base01);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-sol-base00);\n  --dv-inactivegroup-visiblepanel-tab-color: var(--dv-color-sol-base1);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(147, 161, 161, 0.6);\n  --dv-separator-border: transparent;\n  --dv-paneview-active-outline-color: var(--dv-color-sol-blue);\n  --dv-active-sash-color: var(--dv-color-sol-blue);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);\n  --dv-floating-border: 1px solid rgba(0, 0, 0, 0.1);\n  --dv-scrollbar-background-color: rgba(101, 123, 131, 0.25);\n  --dv-floating-group-border: 2px solid rgba(238, 232, 213, 0.5);\n}\n\n.dockview-theme-github-dark {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-github-dark .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-github-dark {\n  color-scheme: dark;\n  --dv-color-gh-canvas-default: #0d1117;\n  --dv-color-gh-canvas-subtle: #161b22;\n  --dv-color-gh-canvas-inset: #010409;\n  --dv-color-gh-border: #30363d;\n  --dv-color-gh-border-muted: #21262d;\n  --dv-color-gh-fg-default: #e6edf3;\n  --dv-color-gh-fg-muted: #8b949e;\n  --dv-color-gh-fg-subtle: #6e7681;\n  --dv-color-gh-accent: #58a6ff;\n  --dv-group-view-background-color: var(--dv-color-gh-canvas-default);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-gh-canvas-subtle\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-canvas-default\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-canvas-subtle\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-canvas-default\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-canvas-subtle\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-gh-fg-default);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-gh-fg-muted);\n  --dv-inactivegroup-visiblepanel-tab-color: var(--dv-color-gh-fg-subtle);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(110, 118, 129, 0.5);\n  --dv-separator-border: var(--dv-color-gh-border);\n  --dv-paneview-active-outline-color: var(--dv-color-gh-accent);\n  --dv-active-sash-color: var(--dv-color-gh-accent);\n  --dv-scrollbar-background-color: rgba(48, 54, 61, 0.7);\n  --dv-drag-over-background-color: rgba(88, 166, 255, 0.15);\n}\n\n.dockview-theme-github-dark-spaced {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-theme-github-dark-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-theme-github-dark-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-theme-github-dark-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-theme-github-dark-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-theme-github-dark-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-theme-github-dark-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-theme-github-dark-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-theme-github-dark-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-tabs-overflow-container,\n.dockview-theme-github-dark-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-theme-github-dark-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-theme-github-dark-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-github-dark-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-theme-github-dark-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-github-dark-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-theme-github-dark-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-theme-github-dark-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-dark-spaced {\n  color-scheme: dark;\n  --dv-color-gh-canvas-default: #0d1117;\n  --dv-color-gh-canvas-subtle: #161b22;\n  --dv-color-gh-canvas-inset: #010409;\n  --dv-color-gh-border: #30363d;\n  --dv-color-gh-border-muted: #21262d;\n  --dv-color-gh-fg-default: #e6edf3;\n  --dv-color-gh-fg-muted: #8b949e;\n  --dv-color-gh-fg-subtle: #6e7681;\n  --dv-color-gh-accent: #58a6ff;\n  --dv-drag-over-background-color: rgba(88, 166, 255, 0.1);\n  --dv-group-view-background-color: var(--dv-color-gh-canvas-inset);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-gh-canvas-subtle\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-border\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-canvas-subtle\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-border\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-canvas-subtle\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-gh-fg-default);\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-gh-fg-muted);\n  --dv-inactivegroup-visiblepanel-tab-color: var(--dv-color-gh-fg-subtle);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(110, 118, 129, 0.5);\n  --dv-separator-border: transparent;\n  --dv-paneview-active-outline-color: var(--dv-color-gh-accent);\n  --dv-active-sash-color: var(--dv-color-gh-accent);\n  --dv-scrollbar-background-color: rgba(48, 54, 61, 0.7);\n  --dv-floating-group-border: 2px solid var(--dv-color-gh-canvas-inset);\n}\n\n.dockview-theme-github-light {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n}\n.dockview-theme-github-light .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {\n  opacity: 0;\n  transition: none;\n}\n.dockview-theme-github-light {\n  color-scheme: light;\n  --dv-color-gh-light-canvas-default: #ffffff;\n  --dv-color-gh-light-canvas-subtle: #f6f8fa;\n  --dv-color-gh-light-canvas-inset: #f0f6ff;\n  --dv-color-gh-light-border: #d0d7de;\n  --dv-color-gh-light-fg-default: #1f2328;\n  --dv-color-gh-light-fg-muted: #656d76;\n  --dv-color-gh-light-fg-subtle: #6e7781;\n  --dv-color-gh-light-accent: #0969da;\n  --dv-group-view-background-color: var(--dv-color-gh-light-canvas-default);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-gh-light-canvas-subtle\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-light-canvas-default\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-light-canvas-subtle\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-light-canvas-default\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-light-canvas-subtle\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(\n      --dv-color-gh-light-fg-default\n  );\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-gh-light-fg-muted);\n  --dv-inactivegroup-visiblepanel-tab-color: var(\n      --dv-color-gh-light-fg-subtle\n  );\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(110, 118, 129, 0.4);\n  --dv-separator-border: var(--dv-color-gh-light-border);\n  --dv-paneview-active-outline-color: var(--dv-color-gh-light-accent);\n  --dv-active-sash-color: var(--dv-color-gh-light-accent);\n  --dv-scrollbar-background-color: rgba(208, 215, 222, 0.5);\n  --dv-drag-over-background-color: rgba(9, 105, 218, 0.1);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);\n  --dv-floating-border: 1px solid rgba(0, 0, 0, 0.1);\n}\n\n.dockview-theme-github-light-spaced {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-theme-github-light-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-theme-github-light-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-theme-github-light-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-theme-github-light-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-theme-github-light-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-theme-github-light-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-theme-github-light-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-theme-github-light-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-tabs-overflow-container,\n.dockview-theme-github-light-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-theme-github-light-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-theme-github-light-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-github-light-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-theme-github-light-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-github-light-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-theme-github-light-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-theme-github-light-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-github-light-spaced {\n  color-scheme: light;\n  --dv-color-gh-light-canvas-default: #ffffff;\n  --dv-color-gh-light-canvas-subtle: #f6f8fa;\n  --dv-color-gh-light-border: #d0d7de;\n  --dv-color-gh-light-fg-default: #1f2328;\n  --dv-color-gh-light-fg-muted: #656d76;\n  --dv-color-gh-light-fg-subtle: #6e7781;\n  --dv-color-gh-light-accent: #0969da;\n  --dv-drag-over-background-color: rgba(9, 105, 218, 0.08);\n  --dv-group-view-background-color: var(--dv-color-gh-light-canvas-subtle);\n  --dv-tabs-and-actions-container-background-color: var(\n      --dv-color-gh-light-canvas-default\n  );\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-light-border\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-light-canvas-default\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-gh-light-border\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-gh-light-canvas-default\n  );\n  --dv-activegroup-visiblepanel-tab-color: var(\n      --dv-color-gh-light-fg-default\n  );\n  --dv-activegroup-hiddenpanel-tab-color: var(--dv-color-gh-light-fg-muted);\n  --dv-inactivegroup-visiblepanel-tab-color: var(\n      --dv-color-gh-light-fg-subtle\n  );\n  --dv-inactivegroup-hiddenpanel-tab-color: rgba(110, 118, 129, 0.4);\n  --dv-separator-border: transparent;\n  --dv-paneview-active-outline-color: var(--dv-color-gh-light-accent);\n  --dv-active-sash-color: var(--dv-color-gh-light-accent);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);\n  --dv-floating-border: 1px solid rgba(0, 0, 0, 0.1);\n  --dv-scrollbar-background-color: rgba(208, 215, 222, 0.5);\n  --dv-floating-group-border: 2px solid rgba(208, 215, 222, 0.5);\n}\n\n.dockview-theme-abyss-spaced {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-theme-abyss-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-theme-abyss-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-theme-abyss-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-theme-abyss-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-theme-abyss-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-theme-abyss-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-theme-abyss-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-theme-abyss-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-tabs-overflow-container,\n.dockview-theme-abyss-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-theme-abyss-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-theme-abyss-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-abyss-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-theme-abyss-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-abyss-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-theme-abyss-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-theme-abyss-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-abyss-spaced {\n  color-scheme: dark;\n  --dv-color-abyss-dark: rgb(11, 6, 17);\n  --dv-color-abyss: #16121f;\n  --dv-color-abyss-light: #201d2b;\n  --dv-color-abyss-lighter: #2a2837;\n  --dv-color-abyss-accent: rgb(91, 30, 207);\n  --dv-color-abyss-primary-text: white;\n  --dv-color-abyss-secondary-text: rgb(148, 151, 169);\n  --dv-drag-over-background-color: \'\';\n  --dv-group-view-background-color: var(--dv-color-abyss-dark);\n  --dv-tabs-and-actions-container-background-color: var(--dv-color-abyss);\n  --dv-activegroup-visiblepanel-tab-background-color: var(\n      --dv-color-abyss-lighter\n  );\n  --dv-activegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-abyss-light\n  );\n  --dv-inactivegroup-visiblepanel-tab-background-color: var(\n      --dv-color-abyss-lighter\n  );\n  --dv-inactivegroup-hiddenpanel-tab-background-color: var(\n      --dv-color-abyss-light\n  );\n  --dv-tab-divider-color: transparent;\n  --dv-activegroup-visiblepanel-tab-color: var(--dv-color-abyss-primary-text);\n  --dv-activegroup-hiddenpanel-tab-color: var(\n      --dv-color-abyss-secondary-text\n  );\n  --dv-inactivegroup-visiblepanel-tab-color: var(\n      --dv-color-abyss-primary-text\n  );\n  --dv-inactivegroup-hiddenpanel-tab-color: var(\n      --dv-color-abyss-secondary-text\n  );\n  --dv-separator-border: transparent;\n  --dv-paneview-header-border-color: rgb(51, 51, 51);\n  --dv-active-sash-color: var(--dv-color-abyss-accent);\n  --dv-floating-group-border: 2px solid var(--dv-color-abyss-dark);\n}\n\n.dockview-theme-light-spaced {\n  --dv-paneview-active-outline-color: dodgerblue;\n  --dv-tabs-and-actions-container-font-size: 13px;\n  --dv-tabs-and-actions-container-height: 35px;\n  --dv-drag-over-background-color: rgba(83, 89, 93, 0.5);\n  --dv-drag-over-border-color: transparent;\n  --dv-edge-dock-indicator-color: rgba(56, 139, 253, 0.9);\n  --dv-tabs-container-scrollbar-color: #888;\n  --dv-icon-hover-background-color: rgba(90, 93, 94, 0.31);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);\n  --dv-floating-border: 1px solid rgba(255, 255, 255, 0.1);\n  --dv-overlay-z-index: 999;\n  --dv-tab-font-size: inherit;\n  --dv-border-radius: 0px;\n  --dv-tab-margin: 0;\n  --dv-sash-color: transparent;\n  --dv-active-sash-color: transparent;\n  --dv-active-sash-transition-duration: 0.1s;\n  --dv-active-sash-transition-delay: 0.5s;\n  --dv-spacing-padding: 0px;\n  --dv-tab-border-radius: 0px;\n  --dv-sash-border-radius: 0px;\n  --dv-dropdown-border-radius: 0px;\n  --dv-tab-close-icon-size: inherit;\n  --dv-floating-group-border: none;\n  --dv-drag-over-border: none;\n  --dv-floating-group-dragging-opacity: 0.5;\n  --dv-floating-titlebar-height: 22px;\n  --dv-floating-titlebar-background-color: var(\n      --dv-tabs-and-actions-container-background-color\n  );\n  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);\n  --dv-tab-group-color-grey: #5f6368;\n  --dv-tab-group-color-blue: #1a73e8;\n  --dv-tab-group-color-red: #d93025;\n  --dv-tab-group-color-yellow: #f9ab00;\n  --dv-tab-group-color-green: #188038;\n  --dv-tab-group-color-pink: #d01884;\n  --dv-tab-group-color-purple: #a142f4;\n  --dv-tab-group-color-cyan: #007b83;\n  --dv-tab-group-color-orange: #e8710a;\n  --dv-tab-group-chip-padding: 4px 8px;\n  --dv-tab-group-chip-border-radius: 6px;\n  --dv-tab-group-chip-font-size: 11px;\n  --dv-tab-group-line-height: 2px;\n  --dv-tab-group-line-opacity: 0.6;\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-theme-light-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-theme-light-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-theme-light-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-theme-light-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-theme-light-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-theme-light-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-theme-light-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-theme-light-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-theme-light-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-tabs-overflow-container,\n.dockview-theme-light-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-theme-light-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-theme-light-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-theme-light-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-light-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-theme-light-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-theme-light-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-theme-light-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-theme-light-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-theme-light-spaced {\n  color-scheme: light;\n  --dv-drag-over-background-color: \'\';\n  --dv-group-view-background-color: #f6f5f9;\n  --dv-tabs-and-actions-container-background-color: white;\n  --dv-activegroup-visiblepanel-tab-background-color: #ededf0;\n  --dv-activegroup-hiddenpanel-tab-background-color: #f9f9fa;\n  --dv-inactivegroup-visiblepanel-tab-background-color: #ededf0;\n  --dv-inactivegroup-hiddenpanel-tab-background-color: #f9f9fa;\n  --dv-tab-divider-color: transparent;\n  --dv-activegroup-visiblepanel-tab-color: rgb(104, 107, 130);\n  --dv-activegroup-hiddenpanel-tab-color: rgb(148, 151, 169);\n  --dv-inactivegroup-visiblepanel-tab-color: rgb(104, 107, 130);\n  --dv-inactivegroup-hiddenpanel-tab-color: rgb(148, 151, 169);\n  --dv-separator-border: transparent;\n  --dv-paneview-header-border-color: rgb(51, 51, 51);\n  --dv-active-sash-color: rgb(91, 30, 207);\n  --dv-floating-box-shadow:\n      0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);\n  --dv-floating-border: 1px solid rgba(0, 0, 0, 0.1);\n  --dv-scrollbar-background-color: rgba(0, 0, 0, 0.25);\n  --dv-floating-group-border: 2px solid rgba(255, 255, 255, 0.1);\n}\n\n.dockview-spaced {\n  --dv-spacing-padding: 10px;\n  --dv-tab-font-size: 12px;\n  --dv-border-radius: 12px;\n  --dv-tab-margin-block: 0.5rem;\n  --dv-tab-margin-inline: 0.25rem;\n  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline);\n  --dv-tabs-and-actions-container-height: 44px;\n  --dv-tab-border-radius: 8px;\n  --dv-sash-border-radius: 4px;\n  --dv-dropdown-border-radius: 8px;\n  --dv-tab-close-icon-size: 8px;\n  --dv-floating-group-border: 2px solid var(--dv-group-view-background-color);\n  --dv-floating-titlebar-background-color: var(\n      --dv-group-view-background-color\n  );\n  --dv-floating-titlebar-border-bottom: none;\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n  background-color: var(--dv-group-view-background-color);\n}\n.dockview-spaced .dv-dockview {\n  padding: 0;\n}\n.dockview-spaced .dv-resize-container:has(> .dv-groupview) {\n  border-radius: 8px;\n}\n.dockview-spaced .dv-sash {\n  border-radius: var(--dv-sash-border-radius);\n}\n.dockview-spaced .dv-drop-target-anchor {\n  border-radius: calc(var(--dv-border-radius) / 4);\n}\n.dockview-spaced .dv-drop-target-anchor.dv-drop-target-content {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-resize-container {\n  border-radius: var(--dv-border-radius) !important;\n  border: none;\n}\n.dockview-spaced .dv-resize-container .dv-groupview {\n  border: var(--dv-floating-group-border);\n}\n.dockview-spaced .dv-resize-container > .dv-grid-view {\n  box-sizing: border-box;\n  padding: var(--dv-spacing-padding);\n}\n.dockview-spaced .dv-resize-container-with-titlebar > .dv-grid-view {\n  padding-top: 0;\n}\n.dockview-spaced .dv-resize-container-with-titlebar > .dv-floating-titlebar {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-tabs-overflow-container,\n.dockview-spaced .dv-tabs-overflow-dropdown-default {\n  border-radius: var(--dv-dropdown-border-radius);\n  height: unset !important;\n}\n.dockview-spaced .dv-render-overlay {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-tab {\n  border-radius: var(--dv-tab-border-radius);\n}\n.dockview-spaced .dv-tab .dv-svg {\n  height: var(--dv-tab-close-icon-size);\n  width: var(--dv-tab-close-icon-size);\n}\n.dockview-spaced .dv-tabs-container--wrap:not(.dv-tabs-container-vertical) .dv-tab {\n  height: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-spaced .dv-tabs-container-vertical .dv-tab {\n  margin: var(--dv-tab-margin-inline) var(--dv-tab-margin-block);\n}\n.dockview-spaced .dv-tabs-container--wrap.dv-tabs-container-vertical .dv-tab {\n  width: calc(var(--dv-tabs-and-actions-container-height) - 2 * var(--dv-tab-margin-block));\n}\n.dockview-spaced .dv-groupview {\n  border-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-groupview .dv-tabs-and-actions-container {\n  padding: 0px calc(var(--dv-border-radius) / 2);\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-groupview .dv-tabs-and-actions-container.dv-groupview-header-vertical {\n  padding: calc(var(--dv-border-radius) / 2) 0;\n}\n.dockview-spaced .dv-groupview .dv-content-container {\n  background-color: var(--dv-tabs-and-actions-container-background-color);\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-groupview.dv-edge-tool-window .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-groupview.dv-edge-tool-window .dv-content-container {\n  border-radius: 0;\n}\n.dockview-spaced .dv-groupview.dv-edge-tool-window .dv-tabs-and-actions-container {\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-edge-peek {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-edge-peek-clip {\n  border-bottom-left-radius: var(--dv-border-radius);\n  border-bottom-right-radius: var(--dv-border-radius);\n}\n.dockview-spaced .dv-edge-peek-header {\n  border-top-left-radius: var(--dv-border-radius);\n  border-top-right-radius: var(--dv-border-radius);\n}\n\n.dv-context-menu {\n  min-width: 160px;\n  overflow: hidden;\n  background: var(--dv-context-menu-background-color, var(--dv-activegroup-hiddenpanel-tab-background-color));\n  color: var(--dv-context-menu-color, var(--dv-activegroup-hiddenpanel-tab-color));\n  border: 1px solid var(--dv-tab-divider-color);\n  border-radius: var(--dv-border-radius);\n  box-shadow: var(--dv-floating-box-shadow);\n  padding: 4px 0;\n}\n\n.dv-context-menu-item {\n  height: 25px;\n  padding: 0 12px;\n  display: flex;\n  align-items: center;\n  cursor: pointer;\n  font-size: var(--dv-tabs-and-actions-container-font-size);\n  white-space: nowrap;\n  user-select: none;\n}\n.dv-context-menu-item:hover {\n  background: var(--dv-icon-hover-background-color);\n}\n.dv-context-menu-item.dv-context-menu-item--disabled {\n  opacity: 0.4;\n  cursor: default;\n  pointer-events: none;\n}\n\n.dv-context-menu-separator {\n  height: 1px;\n  background: var(--dv-tab-divider-color);\n  margin: 4px 0;\n}\n\n.dv-context-menu-rename {\n  padding: 8px 12px 4px;\n}\n\n.dv-context-menu-rename-input {\n  width: 100%;\n  box-sizing: border-box;\n  padding: 8px 10px;\n  border: 1px solid var(--dv-tab-divider-color);\n  border-radius: var(--dv-border-radius);\n  background: inherit;\n  color: var(--dv-activegroup-visiblepanel-tab-color);\n  font-size: var(--dv-tabs-and-actions-container-font-size);\n  outline: none;\n}\n.dv-context-menu-rename-input:focus {\n  border-color: var(--dv-activegroup-visiblepanel-tab-color);\n}\n.dv-context-menu-rename-input::placeholder {\n  color: var(--dv-activegroup-hiddenpanel-tab-color);\n}\n\n.dv-context-menu-color-picker {\n  display: flex;\n  flex-direction: row;\n  gap: 6px;\n  padding: 8px 12px;\n  align-items: center;\n}\n\n.dv-context-menu-color-swatch {\n  width: 20px;\n  height: 20px;\n  border-radius: 50%;\n  cursor: pointer;\n  border: 2px solid transparent;\n  flex-shrink: 0;\n  background-color: var(--dv-tab-group-color);\n}\n.dv-context-menu-color-swatch:hover {\n  opacity: 0.85;\n}\n.dv-context-menu-color-swatch.dv-context-menu-color-swatch--selected {\n  outline: 2px solid var(--dv-tab-divider-color);\n  outline-offset: 2px;\n}\n\n.dv-tab-group-indicator-none .dv-groupview-header-bottom .dv-tab-group-underline {\n  top: auto;\n  bottom: 0;\n}\n\n.dv-groupview.dv-groupview-header-bottom.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after, .dv-groupview.dv-groupview-header-bottom.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {\n  top: 0px;\n  bottom: auto;\n}';
 
 // client/theme-css.ts
-var THEME_CSS = "/*\n * dsh-ps-floating-panels \u2014 theme layer.\n *\n * Colour ONLY. Every value is a `var(--dsw-alias-*, <fallback>)` so the panels\n * follow the host's light/dark theme: when the host defines the alias token the\n * token wins, and the fallback keeps the panel legible when it is absent.\n *\n * Geometry (positioning, flex, sizing, transitions) lives in inject-css.ts\n * under the `ps-` class names, so this file never has to restate layout.\n *\n * The fallbacks are plain hex/rgb literals by necessity \u2014 a CSS custom\n * property needs a concrete value to fall back to. They are NOT stray colours:\n * they are always inside the second argument of `var()`.\n */\n\n.ps-floating-root {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  font-size: 13px;\n  line-height: 1.45;\n}\n\n/* Outer Dockview container: the ONE place rounded corners are applied. Native\n * DSH elements mounted through the proxy are never re-rounded / re-bordered. */\n.ps-dock-shell {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 12px;\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);\n  overflow: hidden;\n}\n\n.ps-dock-toolbar {\n  background: var(--dsw-alias-bg-layer-2, #f5f5f7);\n  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-dock-toolbar__title {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  font-weight: 600;\n}\n\n.ps-dock-btn {\n  background: transparent;\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.14));\n  border-radius: 6px;\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n  cursor: pointer;\n}\n\n.ps-dock-btn:hover {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  border-color: var(--dsw-alias-brand-primary, #4d6bfe);\n}\n\n.ps-dock-btn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary, #4d6bfe);\n  outline-offset: 1px;\n}\n\n/* Tab bar (our defaultTabComponent) */\n.ps-tab {\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-tab[data-active='true'] {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-tab__label {\n  color: inherit;\n}\n\n.ps-tab__btn {\n  color: var(--dsw-alias-label-tertiary, #9a9aa0);\n  background: transparent;\n  border: none;\n  border-radius: 4px;\n  cursor: pointer;\n}\n\n.ps-tab__btn:hover {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  background: var(--dsw-alias-bg-layer-2, #f0f0f2);\n}\n\n/* Panel content */\n.ps-panel-body {\n  background: var(--dsw-alias-bg-base, #ffffff);\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-panel-body[data-collapsed='true'] {\n  background: var(--dsw-alias-bg-layer-2, #f5f5f7);\n}\n\n.ps-panel-hint {\n  color: var(--dsw-alias-label-tertiary, #9a9aa0);\n}\n\n/* Native decoupling proxy placeholder */\n.ps-proxy-placeholder {\n  background: var(--dsw-alias-bg-layer-2, #f5f5f7);\n  border: 1px dashed var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.18));\n  border-radius: 8px;\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-proxy-placeholder__title {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  font-weight: 600;\n}\n\n.ps-proxy-placeholder__body {\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-proxy-placeholder__hint {\n  color: var(--dsw-alias-label-tertiary, #9a9aa0);\n}\n\n/* Status badge \u2014 not rendered at all when showStatusBadge is false */\n.ps-status-badge {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 999px;\n  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-status-badge__dot {\n  background: var(--dsw-alias-state-success-primary, #22c55e);\n}\n\n.ps-status-badge__dot[data-floating='true'] {\n  background: var(--dsw-alias-state-business-primary, #4d6bfe);\n}\n\n.ps-status-badge__dot[data-collapsed='true'] {\n  background: var(--dsw-alias-state-warn-primary, #f59e0b);\n}\n\n.ps-launcher-pill {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 999px;\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n  cursor: pointer;\n  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);\n}\n\n.ps-launcher-pill:hover {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  border-color: var(--dsw-alias-brand-primary, #4d6bfe);\n}\n\n.ps-launcher-pill__count {\n  background: var(--dsw-alias-brand-primary, #4d6bfe);\n  color: var(--dsw-alias-label-primary-foreground, #ffffff);\n}\n\n/* Conflict dialog */\n.ps-conflict-backdrop {\n  background: var(--dsw-alias-bg-mask, rgba(0, 0, 0, 0.42));\n}\n\n.ps-conflict-dialog {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 12px;\n  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-conflict-dialog__title {\n  color: var(--dsw-alias-state-warn-primary, #f59e0b);\n  font-weight: 600;\n}\n\n.ps-conflict-dialog__list {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-conflict-dialog__hint {\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n";
+var THEME_CSS = "/*\n * dsh-ps-floating-panels \u2014 theme layer.\n *\n * Colour ONLY. Every value is a `var(--dsw-alias-*, <fallback>)` so the panels\n * follow the host's light/dark theme: when the host defines the alias token the\n * token wins, and the fallback keeps the panel legible when it is absent.\n *\n * Geometry (positioning, flex, sizing, transitions) lives in inject-css.ts\n * under the `ps-` class names, so this file never has to restate layout.\n *\n * The fallbacks are plain hex/rgb literals by necessity \u2014 a CSS custom\n * property needs a concrete value to fall back to. They are NOT stray colours:\n * they are always inside the second argument of `var()`.\n */\n\n.ps-floating-root {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  font-size: 13px;\n  line-height: 1.45;\n}\n\n/* Outer Dockview container: the ONE place rounded corners are applied. Adopted\n * native DSH elements are never re-rounded / re-bordered \u2014 only their position\n * is neutralised (see inject-css.ts). */\n.ps-dock-shell {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 12px;\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);\n  overflow: hidden;\n}\n\n.ps-dock-toolbar {\n  background: var(--dsw-alias-bg-layer-2, #f5f5f7);\n  border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-dock-toolbar__title {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  font-weight: 600;\n}\n\n.ps-dock-btn {\n  background: transparent;\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.14));\n  border-radius: 6px;\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n  cursor: pointer;\n}\n\n.ps-dock-btn:hover {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  border-color: var(--dsw-alias-brand-primary, #4d6bfe);\n}\n\n.ps-dock-btn:focus-visible {\n  outline: 2px solid var(--dsw-alias-brand-primary, #4d6bfe);\n  outline-offset: 1px;\n}\n\n/* Tab bar (our defaultTabComponent) */\n.ps-tab {\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-tab[data-active='true'] {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-tab__label {\n  color: inherit;\n}\n\n.ps-tab__btn {\n  color: var(--dsw-alias-label-tertiary, #9a9aa0);\n  background: transparent;\n  border: none;\n  border-radius: 4px;\n  cursor: pointer;\n}\n\n.ps-tab__btn:hover {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  background: var(--dsw-alias-bg-layer-2, #f0f0f2);\n}\n\n/* Panel content */\n.ps-panel-body {\n  background: var(--dsw-alias-bg-base, #ffffff);\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-panel-body[data-collapsed='true'] {\n  background: var(--dsw-alias-bg-layer-2, #f5f5f7);\n}\n\n.ps-panel-hint {\n  color: var(--dsw-alias-label-tertiary, #9a9aa0);\n}\n\n/* Adopted host region. The host node keeps its own colours; this only paints\n * the panel behind it while the node is (re)attached. */\n.ps-native-host {\n  background: var(--dsw-alias-bg-base, #ffffff);\n}\n\n/* Region the host no longer exposes (its pane was closed) */\n.ps-panel-missing {\n  background: var(--dsw-alias-bg-layer-2, #f5f5f7);\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-panel-missing__title {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  font-weight: 600;\n}\n\n.ps-panel-missing__body {\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-panel-missing__hint {\n  color: var(--dsw-alias-label-tertiary, #9a9aa0);\n}\n\n/* Status badge \u2014 not rendered at all when showStatusBadge is false */\n.ps-status-badge {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 999px;\n  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n\n.ps-status-badge__dot {\n  background: var(--dsw-alias-state-success-primary, #22c55e);\n}\n\n.ps-status-badge__dot[data-floating='true'] {\n  background: var(--dsw-alias-state-business-primary, #4d6bfe);\n}\n\n.ps-status-badge__dot[data-collapsed='true'] {\n  background: var(--dsw-alias-state-warn-primary, #f59e0b);\n}\n\n.ps-launcher-pill {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 999px;\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n  cursor: pointer;\n  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);\n}\n\n.ps-launcher-pill:hover {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n  border-color: var(--dsw-alias-brand-primary, #4d6bfe);\n}\n\n.ps-launcher-pill__count {\n  background: var(--dsw-alias-brand-primary, #4d6bfe);\n  color: var(--dsw-alias-label-primary-foreground, #ffffff);\n}\n\n/* Conflict dialog */\n.ps-conflict-backdrop {\n  background: var(--dsw-alias-bg-mask, rgba(0, 0, 0, 0.42));\n}\n\n.ps-conflict-dialog {\n  background: var(--dsw-alias-bg-layer-1, #ffffff);\n  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));\n  border-radius: 12px;\n  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-conflict-dialog__title {\n  color: var(--dsw-alias-state-warn-primary, #f59e0b);\n  font-weight: 600;\n}\n\n.ps-conflict-dialog__list {\n  color: var(--dsw-alias-label-primary, #1c1c1e);\n}\n\n.ps-conflict-dialog__hint {\n  color: var(--dsw-alias-label-secondary, #6b6b70);\n}\n";
 
 // client/inject-css.ts
 var PS_STYLE_ELEMENT_ID = "dsh-ps-floating-panels-style";
@@ -20116,6 +20512,13 @@ var GEOMETRY_CSS = String.raw`
   position: absolute;
   inset: 14px;
   overflow: hidden;
+}
+
+/* Adopted mode owns the whole viewport: the host's own shell columns are
+ * hidden behind us (see native-shell.ts), so the floating surface goes flush
+ * and gives the docked/floating groups the full window to snap inside. */
+.ps-floating-root[data-native='adopted'] .ps-dock-shell {
+  inset: 0;
 }
 
 .ps-dock-toolbar {
@@ -20223,31 +20626,49 @@ var GEOMETRY_CSS = String.raw`
   padding: 12px;
 }
 
-/* ---- native decoupling proxy ---- */
-.ps-proxy {
+/* ---- adopted native regions ----
+ * The host's own nodes are MOVED into these containers (never cloned), so the
+ * geometry the host/dockkit gave them must be neutralised: they were laid out
+ * inside the shell's own grid (sidebar | center | rightbar), not inside a
+ * Dockview panel. The theme layer stays untouched — only position wins. */
+.ps-native-host {
+  display: block;
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
 
-.ps-proxy > * {
-  flex: 1 1 auto;
+.ps-native-host > [data-ps-adopted] {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: auto;
+  height: auto;
+  min-width: 0;
   min-height: 0;
+  margin: 0 !important;
+  overflow: auto;
+  transform: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  z-index: auto;
 }
 
-.ps-proxy-placeholder {
-  display: flex;
-  flex-direction: column;
+/* Native region the host no longer exposes (e.g. its pane was closed). */
+.ps-panel-missing {
   gap: 6px;
-  margin: 8px;
   padding: 12px;
   font-size: 12px;
 }
 
-.ps-proxy-placeholder__title { font-size: 12px; }
-.ps-proxy-placeholder__body { font-size: 11px; }
-.ps-proxy-placeholder__hint { font-size: 11px; opacity: 0.85; }
+.ps-panel-missing__title { font-size: 12px; }
+.ps-panel-missing__body { font-size: 11px; }
+.ps-panel-missing__hint { font-size: 11px; opacity: 0.85; }
 
 /* ---- status badge / launcher ---- */
 .ps-status-badge {
@@ -20350,64 +20771,62 @@ function injectPsStyles(doc = typeof document === "undefined" ? void 0 : documen
 // client/locales.ts
 var PS_LOCALE_NS = "ps-panels";
 var zh = {
-  "panel.conversation": "\u5BF9\u8BDD",
-  "panel.conversationTree": "\u5BF9\u8BDD\u6811",
-  "panel.codePreview": "\u4EE3\u7801\u9884\u89C8",
-  "panel.composer": "\u8F93\u5165\u6846",
-  "panel.workspace": "\u5DE5\u4F5C\u533A",
-  "panel.codeTree": "\u4EE3\u7801\u6811",
-  "panel.agentTeam": "\u5DE5\u4F5C\u56E2\u961F",
+  "region.sidebar": "\u4FA7\u680F",
+  "region.main": "\u4E3B\u533A\u57DF",
+  "native.unknownTitle": "\u539F\u751F\u9762\u677F",
+  "native.missingTitle": "\u539F\u751F\u533A\u57DF\u4E0D\u53EF\u7528",
+  "native.missingBody": "\u5BBF\u4E3B\u5F53\u524D\u6CA1\u6709\u66B4\u9732\u533A\u57DF\u300C{regionId}\u300D\uFF1A\u8BE5\u9762\u677F\u53EF\u80FD\u5DF2\u88AB\u5BBF\u4E3B\u5173\u95ED\uFF0C\u6216\u9875\u9762\u5C1A\u672A\u6E32\u67D3\u5B8C\u6210\u3002",
+  "native.missingHint": "\u70B9\u51FB\u5DE5\u5177\u680F\u7684\u300C\u91CD\u65B0\u626B\u63CF\u300D\uFF1B\u6216\u5148\u300C\u8FD8\u539F\u539F\u751F\u5E03\u5C40\u300D\uFF0C\u518D\u91CD\u65B0\u91C7\u7528\u4E00\u6B21\u3002",
   "ui.collapse": "\u6536\u8D77",
   "ui.expand": "\u5C55\u5F00",
   "ui.collapsePanel": "\u6536\u8D77 {name}",
   "ui.expandPanel": "\u5C55\u5F00 {name}",
   "ui.reset": "\u91CD\u7F6E\u5E03\u5C40",
   "ui.resetTitle": "\u6062\u590D\u9ED8\u8BA4\u62C6\u5206\u5E03\u5C40\u5E76\u5C55\u5F00\u5168\u90E8\u9762\u677F",
-  "ui.hideAll": "\u9690\u85CF\u5168\u90E8",
   "ui.showAll": "\u663E\u793A\u5168\u90E8",
-  "ui.hide": "\u9690\u85CF",
-  "ui.show": "\u663E\u793A",
   "ui.launcher": "\u9762\u677F",
   "ui.dockHint": "\u62D6\u62FD\u6807\u9898\u680F\u53EF\u505C\u9760 / \u62C6\u5206 / \u62D6\u51FA\u4E3A\u6D6E\u7A97\uFF1B\u62D6\u5230\u8FB9\u7F18\u81EA\u52A8\u5438\u9644",
   "ui.launcherHint": "\u70B9\u51FB\u663E\u793A\u5168\u90E8\u9762\u677F\uFF0C\u6216\u91CD\u7F6E\u4E3A\u9ED8\u8BA4\u62C6\u5206\u5E03\u5C40",
+  "ui.rescan": "\u91CD\u65B0\u626B\u63CF",
+  "ui.rescanTitle": "\u91CD\u65B0\u626B\u63CF\u5BBF\u4E3B\u754C\u9762\u91CC\u7684\u53EF\u62C6\u5206\u533A\u57DF\uFF08\u65B0\u5F00\u7684\u7A97\u683C\u4F1A\u7ACB\u523B\u83B7\u5F97\u81EA\u5DF1\u7684\u9762\u677F\uFF09",
+  "ui.restoreNative": "\u8FD8\u539F\u539F\u751F\u5E03\u5C40",
+  "ui.restoreNativeTitle": "\u628A\u5BBF\u4E3B\u771F\u5B9E UI \u653E\u56DE\u539F\u4F4D\uFF0C\u5E76\u64A4\u6389\u6D6E\u52A8\u9762\u677F\u5C42",
+  "ui.adoptNative": "\u91C7\u7528\u539F\u751F\u754C\u9762",
+  "ui.adoptNativeTitle": "\u628A\u5BBF\u4E3B\u771F\u5B9E UI\uFF08\u5DE6/\u4E2D/\u53F3\u4E09\u680F\u4E0E\u53F3\u680F\u7A97\u683C\uFF09\u62C6\u8FDB\u6D6E\u52A8\u9762\u677F",
   "status.collapsedSuffix": "\xB7 \u5DF2\u6536\u8D77 {n}",
   "status.panelCount": "{n} \u4E2A\u9762\u677F",
   "status.floatingCount": "{n} \u4E2A\u6D6E\u7A97",
-  "proxy.placeholderTitle": "\u539F\u751F\u9762\u677F\u5360\u4F4D",
-  "proxy.placeholderBody": '\u5BBF\u4E3B/\u6865\u63A5\u5C1A\u672A\u6CE8\u5165 window.__DSH_NATIVE_PANELS__ \u7684 getElement("{panelId}")\uFF0C\u6682\u4EE5\u5360\u4F4D\u8BF4\u660E\u4EE3\u66FF\u3002',
-  "proxy.placeholderHint": "\u8FD9\u662F\u4E0E\u539F\u751F DOM \u89E3\u8026\u7684\u4EE3\u7406\u5C42\uFF1A\u6CE8\u5165\u4E86\u539F\u751F\u5143\u7D20\u540E\uFF0C\u6B64\u5904\u4F1A\u6302\u8F7D\u771F\u5B9E\u9762\u677F\u3002",
   "conflict.title": "\u68C0\u6D4B\u5230\u9762\u677F/\u5E03\u5C40\u63D2\u4EF6\u51B2\u7A81",
   "conflict.body": "\u672C\u63D2\u4EF6\uFF08\u62C6\u5206/\u6D6E\u52A8\u9762\u677F\u7CFB\u7EDF\uFF09\u4E0E\u4EE5\u4E0B\u5DF2\u52A0\u8F7D\u63D2\u4EF6\u51B2\u7A81\uFF0C\u53EF\u80FD\u5BFC\u81F4\u9762\u677F\u6CE8\u518C\u6216\u5E03\u5C40\u5F02\u5E38\uFF1A",
   "conflict.hint": "\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u7981\u7528\u8FD9\u4E9B\u63D2\u4EF6\u540E\u91CD\u65B0\u52A0\u8F7D\u9875\u9762\u3002",
   "conflict.dismiss": "\u77E5\u9053\u4E86"
 };
 var en = {
-  "panel.conversation": "Conversation",
-  "panel.conversationTree": "Conversation Tree",
-  "panel.codePreview": "Code Preview",
-  "panel.composer": "Composer",
-  "panel.workspace": "Workspace",
-  "panel.codeTree": "Code Tree",
-  "panel.agentTeam": "Agent Team",
+  "region.sidebar": "Sidebar",
+  "region.main": "Main",
+  "native.unknownTitle": "Native panel",
+  "native.missingTitle": "Native region unavailable",
+  "native.missingBody": 'The host does not expose region "{regionId}" right now: the panel was closed, or the page has not rendered it yet.',
+  "native.missingHint": 'Use "Rescan" in the toolbar, or "Restore native layout" and adopt again.',
   "ui.collapse": "Collapse",
   "ui.expand": "Expand",
   "ui.collapsePanel": "Collapse {name}",
   "ui.expandPanel": "Expand {name}",
   "ui.reset": "Reset layout",
   "ui.resetTitle": "Restore the default split layout and expand every panel",
-  "ui.hideAll": "Hide all",
   "ui.showAll": "Show all",
-  "ui.hide": "Hide",
-  "ui.show": "Show",
   "ui.launcher": "Panels",
   "ui.dockHint": "Drag the title bar to dock / split / tear out a floating window; drop near an edge to snap",
   "ui.launcherHint": "Click to show every panel, or reset to the default split layout",
+  "ui.rescan": "Rescan",
+  "ui.rescanTitle": "Rescan the host UI for adoptable regions (a newly opened pane gets its own panel)",
+  "ui.restoreNative": "Restore native layout",
+  "ui.restoreNativeTitle": "Put the host real UI back and remove the floating panel layer",
+  "ui.adoptNative": "Adopt native UI",
+  "ui.adoptNativeTitle": "Take the host real UI (left/center/right columns and their panes) apart into floating panels",
   "status.collapsedSuffix": "\xB7 {n} collapsed",
   "status.panelCount": "{n} panels",
   "status.floatingCount": "{n} floating",
-  "proxy.placeholderTitle": "Native panel placeholder",
-  "proxy.placeholderBody": 'The host/bridge has not injected getElement("{panelId}") on window.__DSH_NATIVE_PANELS__ yet, so a placeholder stands in.',
-  "proxy.placeholderHint": "This is the native-DOM decoupling proxy layer: once a native element is injected, the real panel mounts here.",
   "conflict.title": "Panel / layout plugin conflict detected",
   "conflict.body": "This plugin (split + floating panel system) conflicts with the following loaded plugins, which may break panel registration or layout:",
   "conflict.hint": "Disable those plugins in plugin settings, then reload the page.",
@@ -20428,10 +20847,72 @@ function createTranslator(dict, fallback = en, base) {
   };
 }
 
+// client/host-bridge.ts
+var LAYOUT_FIELD = "layout";
+function readLayoutSnapshot(section) {
+  const text = typeof section === "string" ? section : section && typeof section === "object" && !Array.isArray(section) ? section[LAYOUT_FIELD] : void 0;
+  if (typeof text !== "string" || text.trim() === "") return null;
+  try {
+    const parsed = JSON.parse(text);
+    return isPersistedLayout(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+function createHostLayoutBridge(form, namespace) {
+  let warnedReadOnly = false;
+  return {
+    loadLayout: () => {
+      try {
+        return readLayoutSnapshot(form.getSnapshot()?.value);
+      } catch (error) {
+        console.warn(`[dsh-ps-floating-panels] settings layout read failed (${namespace})`, error);
+        return null;
+      }
+    },
+    saveLayout: (layout) => {
+      try {
+        const snapshot = form.getSnapshot();
+        if (snapshot?.writable === false) {
+          if (!warnedReadOnly) {
+            warnedReadOnly = true;
+            console.warn(`[dsh-ps-floating-panels] settings namespace ${namespace} is read-only; layout stays in localStorage`);
+          }
+          return;
+        }
+        const result = form.set(LAYOUT_FIELD, JSON.stringify(layout));
+        if (result && typeof result.then === "function") {
+          void result.then((accepted) => {
+            if (!accepted) console.warn(`[dsh-ps-floating-panels] settings rejected the layout write (${namespace})`);
+          }).catch((error) => {
+            console.warn(`[dsh-ps-floating-panels] settings layout write failed (${namespace})`, error);
+          });
+        } else if (result === false) {
+          console.warn(`[dsh-ps-floating-panels] settings rejected the layout write (${namespace})`);
+        }
+      } catch (error) {
+        console.warn(`[dsh-ps-floating-panels] settings layout write failed (${namespace})`, error);
+      }
+    }
+  };
+}
+function resolveSettingsBridge(ctx, namespace) {
+  const service = ctx && typeof ctx === "object" ? ctx.configForms : void 0;
+  if (!service || typeof service.get !== "function") return void 0;
+  try {
+    const form = service.get(namespace);
+    if (!form || typeof form.getSnapshot !== "function" || typeof form.set !== "function") return void 0;
+    return createHostLayoutBridge(form, namespace);
+  } catch (error) {
+    console.warn(`[dsh-ps-floating-panels] settings bridge unavailable (${namespace})`, error);
+    return void 0;
+  }
+}
+
 // client/index.tsx
-var import_jsx_runtime14 = require("react/jsx-runtime");
+var import_jsx_runtime7 = require("react/jsx-runtime");
 var SETTINGS_NAMESPACE = "dsh-ps-floating-panels";
-var CLIENT_BUILD = "0.1.1+activation-guard";
+var CLIENT_BUILD = "0.2.0+native-adoption";
 var PERSIST_GLOBAL = "__DSH_PS_PANELS_PERSIST__";
 var ACTIVATION_GLOBAL = "__DSH_PS_PANELS_ACTIVATION__";
 function describeError(error) {
@@ -20458,7 +20939,7 @@ function readActivation(win = typeof window === "undefined" ? void 0 : window) {
   return value && typeof value === "object" ? value : void 0;
 }
 function ActivationFailure({ stage, error }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
     "div",
     {
       role: "alert",
@@ -20493,7 +20974,7 @@ function mountActivationBanner(ctx, stage, error) {
     name: "shell.overlay",
     id: "dsh-ps-floating-panels-activation-error",
     label: () => "PS Panels (activation error)"
-  }, () => /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ActivationFailure, { stage, error: described })));
+  }, () => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ActivationFailure, { stage, error: described })));
 }
 function resolvePersistHooks(ctx) {
   if (ctx.psPanelsPersist && typeof ctx.psPanelsPersist === "object") return ctx.psPanelsPersist;
@@ -20512,6 +20993,40 @@ function buildHostBridge(hooks) {
     saveLayout: typeof hooks.saveLayout === "function" ? (layout) => {
       hooks.saveLayout(layout);
     } : void 0
+  };
+}
+function resolveHostPersistence(ctx, namespace) {
+  const holder = { current: void 0 };
+  const legacy = buildHostBridge(resolvePersistHooks(ctx));
+  if (legacy) holder.current = legacy;
+  const direct = resolveSettingsBridge(ctx, namespace);
+  if (direct) holder.current = direct;
+  if (direct) console.info(`[dsh-ps-floating-panels] settings persistence bound (${namespace})`);
+  if (typeof ctx.inject === "function") {
+    try {
+      ctx.inject(["configForms"], (scoped) => {
+        try {
+          const late = resolveSettingsBridge(scoped, namespace);
+          if (!late) return;
+          holder.current = late;
+          console.info(`[dsh-ps-floating-panels] settings persistence joined (${namespace})`);
+        } catch (error) {
+          console.warn("[dsh-ps-floating-panels] settings bridge unavailable:", error);
+        }
+      });
+    } catch (error) {
+      console.warn("[dsh-ps-floating-panels] settings injection unavailable:", error);
+    }
+  }
+  return {
+    loadLayout: () => holder.current?.loadLayout?.() ?? null,
+    saveLayout: (layout) => {
+      try {
+        holder.current?.saveLayout?.(layout);
+      } catch (error) {
+        console.warn("[dsh-ps-floating-panels] settings layout save failed:", error);
+      }
+    }
   };
 }
 function safeInjectStyles() {
@@ -20559,7 +21074,7 @@ function apply(ctx, config) {
   let stage = "styles";
   try {
     let Root2 = function() {
-      return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(PsFloatingPanelsApp, { t, configSource, host, conflicts });
+      return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(PsFloatingPanelsApp, { t, configSource, adopter, host, conflicts });
     };
     var Root = Root2;
     const removeStyles = safeInjectStyles();
@@ -20587,8 +21102,40 @@ function apply(ctx, config) {
     }
     stage = "locale";
     const t = registerLocale(ctx);
+    stage = "native";
+    const adopter = createNativeAdopter(
+      typeof document === "undefined" ? void 0 : document,
+      { titles: { sidebar: t("region.sidebar"), main: t("region.main") } }
+    );
+    adopter.refresh();
+    let removeBridge = () => {
+    };
+    try {
+      removeBridge = installNativePanelsBridge(typeof window === "undefined" ? void 0 : window, adopter);
+    } catch (bridgeError) {
+      console.warn("[dsh-ps-floating-panels] native bridge unavailable:", bridgeError);
+    }
+    if (typeof ctx.effect === "function") {
+      try {
+        ctx.effect(() => {
+          adopter.start();
+          return () => {
+            adopter.stop();
+            try {
+              removeBridge();
+            } catch {
+            }
+          };
+        }, "dsh-ps-floating-panels: native regions");
+      } catch (effectError) {
+        console.warn("[dsh-ps-floating-panels] native observer unavailable:", effectError);
+        adopter.start();
+      }
+    } else {
+      adopter.start();
+    }
     stage = "persist";
-    const host = buildHostBridge(resolvePersistHooks(ctx));
+    const host = resolveHostPersistence(ctx, SETTINGS_NAMESPACE);
     stage = "slot";
     Root2.displayName = "PsFloatingPanelsRoot";
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({
@@ -20596,8 +21143,8 @@ function apply(ctx, config) {
       id: "dsh-ps-floating-panels-root",
       label: () => "PS Panels"
     }, Root2));
-    publishActivation({ ok: true, stage: "active", build: CLIENT_BUILD, at: Date.now() });
-    console.info(`[dsh-ps-floating-panels] active (build ${CLIENT_BUILD})`);
+    publishActivation({ ok: true, stage: "active", build: CLIENT_BUILD, at: Date.now(), regions: adopter.regions().length });
+    console.info(`[dsh-ps-floating-panels] active (build ${CLIENT_BUILD}, ${adopter.regions().length} native region(s))`);
   } catch (error) {
     publishActivation({ ok: false, stage, build: CLIENT_BUILD, at: Date.now(), error: describeError(error) });
     console.error(`[dsh-ps-floating-panels] activation failed (stage: ${stage}, build ${CLIENT_BUILD}):`, error);

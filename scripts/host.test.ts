@@ -2,7 +2,7 @@
  * Host-half smoke/unit tests: contract + apply() wiring against a mock settings
  * service. Bundled by esbuild and run under node (see scripts/smoke-host.mjs).
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as host from '../host/index.ts'
@@ -23,7 +23,11 @@ ok(typeof host.apply === 'function', 'apply is a function')
 const configDefaults = typeof host.Config === 'function' ? (host.Config as unknown as (v: unknown) => Record<string, unknown>)({}) : null
 ok(!!host.Config && (typeof host.Config === 'object' || typeof host.Config === 'function'), 'Config is a Schemastery schema')
 ok(!!configDefaults && configDefaults.showStatusBadge === true, 'Config resolves defaults (showStatusBadge defaults true)')
+ok(!!configDefaults && configDefaults.nativeAdopt === true, 'Config resolves defaults (nativeAdopt defaults true)')
+ok(!!configDefaults && !('layoutMode' in configDefaults), 'layoutMode is gone from the host config surface')
+ok(host.LAYOUT_VERSION === 2, `LAYOUT_VERSION matches the client snapshot version (got ${host.LAYOUT_VERSION})`)
 ok(host.LAYOUT_NAMESPACE === 'dsh-ps-floating-panels', 'LAYOUT_NAMESPACE equals the package name')
+ok(host.snapshotPath().endsWith('layout.json'), 'snapshotPath() points at the layout file')
 ok(!('default' in host), 'no default export')
 
 /* ---- apply() wiring ---- */
@@ -59,12 +63,22 @@ let validateThrew = false
 try { validate({ ...current, layout: 'not-json' }) } catch { validateThrew = true }
 ok(validateThrew, 'validate() rejects a non-JSON layout string')
 let validateOk = true
-try { validate({ ...current, layout: '{"version":1,"dockview":{}}' }) } catch { validateOk = false }
+try { validate({ ...current, layout: '{"version":2,"dockview":{}}' }) } catch { validateOk = false }
 ok(validateOk, 'validate() accepts a valid JSON-object layout')
 
 /* ---- mirror on commit + loadLayout resolution ---- */
-void scope.update({ layout: '{"version":1,"dockview":{"root":true}}' })
+void scope.update({ layout: '{"version":2,"dockview":{"root":true}}' })
 ok(provided.loadLayout() !== null && (provided.loadLayout() as any).dockview.root === true, 'a committed settings layout is readable back through loadLayout()')
+
+// The committed write is mirrored into the durable file (this is the path the
+// browser reaches through the settings document), and the file survives a
+// settings reset only until the reset clears it.
+await new Promise((resolve) => setTimeout(resolve, 60))
+ok(readFileSync(host.snapshotPath(), 'utf8').includes('"root":true'), 'a committed layout is mirrored to the durable snapshot file')
+
+provided.saveLayout({ version: 2, dockview: { root: false }, collapsed: {}, floating: [], updatedAt: 1 })
+await new Promise((resolve) => setTimeout(resolve, 60))
+ok(readFileSync(host.snapshotPath(), 'utf8').includes('"root":false'), 'saveLayout() writes the durable snapshot file')
 
 await provided.resetLayout()
 ok(true, 'resetLayout() completes without throwing')

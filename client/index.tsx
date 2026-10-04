@@ -48,13 +48,15 @@ import { CONFLICT_KEYWORDS, detectConflictsFromWindow, type ConflictEntry } from
 import { resolveConfigSource } from './config-source.ts'
 import { injectPsStyles } from './inject-css.ts'
 import { createTranslator, en, PS_LOCALE_NS, zh, type Translate } from './locales.ts'
+import { resolveSettingsBridge } from './host-bridge.ts'
 import { isPersistedLayout, type LayoutHostBridge } from './layout-persist.ts'
+import { createNativeAdopter, installNativePanelsBridge, type NativeAdopter } from './native-regions.ts'
 
 /** Settings namespace — equals the package name / plugin name. */
 export const SETTINGS_NAMESPACE = 'dsh-ps-floating-panels'
 
 /** Identifies the exact client build in logs and in {@link ActivationRecord}. */
-export const CLIENT_BUILD = '0.1.1+activation-guard'
+export const CLIENT_BUILD = '0.2.0+native-adoption'
 
 /* ------------------------------------------------------------------------- *
  * Structural host surface (no host type imports).
@@ -97,11 +99,20 @@ interface PsClientContext {
   effect?(callback: () => unknown, label?: string): unknown
   /** Cordis event bus; optional. */
   on?(event: string, callback: () => void): () => void
+  /**
+   * Cordis nested injection: runs `callback` with a child scope once every
+   * listed service exists. Used to join the settings document late (see
+   * {@link resolveHostPersistence}); a service that never arrives simply never
+   * calls back, so this can never fail this entry.
+   */
+  inject?(dependencies: string[], callback: (scoped: unknown) => void): unknown
   /** Host persistence seam, when provided. */
   psPanelsPersist?: PersistHooks
   /** Client-side settings service (`settingsScope`/`settings`), when present. */
   settingsScope?: unknown
   settings?: unknown
+  /** Client settings document service (`configForms`), when present. */
+  configForms?: unknown
 }
 
 /** The page-global persistence seam, when a host prefers to publish one. */
@@ -128,6 +139,8 @@ export interface ActivationRecord {
   readonly stage: string
   readonly build: string
   readonly at: number
+  /** Native regions discovered at activation (diagnostic). */
+  readonly regions?: number
   readonly error?: ActivationError
 }
 
@@ -234,6 +247,58 @@ function buildHostBridge(hooks: PersistHooks | undefined): LayoutHostBridge | un
     saveLayout: typeof hooks.saveLayout === 'function'
       ? (layout) => { hooks.saveLayout!(layout) }
       : undefined,
+  }
+}
+
+/**
+ * Resolve the cross-process layout bridge.
+ *
+ * The two halves of a dual-face plugin live in different processes, so the
+ * layout travels through the **settings document** (see host-bridge.ts); the
+ * legacy `psPanelsPersist` hooks are still honoured for an embedding host that
+ * publishes them directly. The settings service may not exist yet when this
+ * entry activates, so a nested `ctx.inject(['configForms'])` child joins it
+ * later.
+ *
+ * The returned facade is STABLE for the page lifetime: the app is constructed
+ * once with it, while the concrete bridge behind it may arrive afterwards.
+ *
+ * @param ctx - this entry's client context.
+ * @param namespace - this plugin's settings namespace.
+ * @returns a bridge that is always safe to call (it may be a no-op).
+ */
+function resolveHostPersistence(ctx: PsClientContext, namespace: string): LayoutHostBridge {
+  const holder: { current?: LayoutHostBridge } = { current: undefined }
+  const legacy = buildHostBridge(resolvePersistHooks(ctx))
+  if (legacy) holder.current = legacy
+  const direct = resolveSettingsBridge(ctx, namespace)
+  if (direct) holder.current = direct
+  if (direct) console.info(`[dsh-ps-floating-panels] settings persistence bound (${namespace})`)
+  if (typeof ctx.inject === 'function') {
+    try {
+      ctx.inject(['configForms'], (scoped: unknown) => {
+        try {
+          const late = resolveSettingsBridge(scoped, namespace)
+          if (!late) return
+          holder.current = late
+          console.info(`[dsh-ps-floating-panels] settings persistence joined (${namespace})`)
+        } catch (error) {
+          console.warn('[dsh-ps-floating-panels] settings bridge unavailable:', error)
+        }
+      })
+    } catch (error) {
+      console.warn('[dsh-ps-floating-panels] settings injection unavailable:', error)
+    }
+  }
+  return {
+    loadLayout: () => holder.current?.loadLayout?.() ?? null,
+    saveLayout: (layout) => {
+      try {
+        holder.current?.saveLayout?.(layout)
+      } catch (error) {
+        console.warn('[dsh-ps-floating-panels] settings layout save failed:', error)
+      }
+    },
   }
 }
 
@@ -358,14 +423,55 @@ export function apply(ctx: PsClientContext, config?: Partial<PsPanelsConfig>): v
     stage = 'locale'
     const t = registerLocale(ctx)
 
+    stage = 'native'
+    // Take the host's OWN ui apart: discovery is a pure read, the actual move
+    // happens when a panel mounts (see native-regions.ts). The engine also
+    // publishes `__DSH_NATIVE_PANELS__` so the adopted regions stay addressable
+    // from DevTools and from any other consumer.
+    const adopter: NativeAdopter = createNativeAdopter(
+      typeof document === 'undefined' ? undefined : document,
+      { titles: { sidebar: t('region.sidebar'), main: t('region.main') } },
+    )
+    adopter.refresh()
+    let removeBridge = (): void => {}
+    try {
+      removeBridge = installNativePanelsBridge(typeof window === 'undefined' ? undefined : window, adopter)
+    } catch (bridgeError) {
+      console.warn('[dsh-ps-floating-panels] native bridge unavailable:', bridgeError)
+    }
+    if (typeof ctx.effect === 'function') {
+      try {
+        ctx.effect(() => {
+          adopter.start()
+          return () => {
+            adopter.stop()
+            try {
+              removeBridge()
+            } catch {
+              /* ignore */
+            }
+          }
+        }, 'dsh-ps-floating-panels: native regions')
+      } catch (effectError) {
+        console.warn('[dsh-ps-floating-panels] native observer unavailable:', effectError)
+        adopter.start()
+      }
+    } else {
+      adopter.start()
+    }
+
     stage = 'persist'
-    const host = buildHostBridge(resolvePersistHooks(ctx))
+    // The layout snapshot normally lives in localStorage; when the composition
+    // serves this namespace through the settings document it ALSO travels Host
+    // ← browser, so a layout survives a profile change (see host-bridge.ts).
+    const host = resolveHostPersistence(ctx, SETTINGS_NAMESPACE)
 
     stage = 'slot'
-    // The render root closes over the resolved translator, config source, bridge
-    // and conflicts; the slot component itself stays prop-free so any host renders it.
+    // The render root closes over the resolved translator, config source,
+    // adoption engine, bridge and conflicts; the slot component itself stays
+    // prop-free so any host renders it.
     function Root(): ReactElement | null {
-      return <PsFloatingPanelsApp t={t} configSource={configSource} host={host} conflicts={conflicts} />
+      return <PsFloatingPanelsApp t={t} configSource={configSource} adopter={adopter} host={host} conflicts={conflicts} />
     }
     Root.displayName = 'PsFloatingPanelsRoot'
 
@@ -375,8 +481,8 @@ export function apply(ctx: PsClientContext, config?: Partial<PsPanelsConfig>): v
       label: () => 'PS Panels',
     }, Root))
 
-    publishActivation({ ok: true, stage: 'active', build: CLIENT_BUILD, at: Date.now() })
-    console.info(`[dsh-ps-floating-panels] active (build ${CLIENT_BUILD})`)
+    publishActivation({ ok: true, stage: 'active', build: CLIENT_BUILD, at: Date.now(), regions: adopter.regions().length })
+    console.info(`[dsh-ps-floating-panels] active (build ${CLIENT_BUILD}, ${adopter.regions().length} native region(s))`)
   } catch (error) {
     publishActivation({ ok: false, stage, build: CLIENT_BUILD, at: Date.now(), error: describeError(error) })
     console.error(`[dsh-ps-floating-panels] activation failed (stage: ${stage}, build ${CLIENT_BUILD}):`, error)

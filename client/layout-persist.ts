@@ -5,11 +5,13 @@
  * proportions and floating groups) through `api.toJSON()`. This module wraps
  * that with:
  *
- *  - {@link defaultLayoutJson} — the default split layout, built from
- *    {@link PANEL_IDS} so the factory and the panel table cannot drift.
+ *  - {@link defaultLayoutJson} — the default split layout for the CURRENT
+ *    native regions (left column, center column, right column), so a panel set
+ *    discovered at runtime always has a sensible starting grid.
  *  - {@link captureLayout} — snapshot = `toJSON()` + collapsed flags + floating
  *    ids + version.
- *  - {@link applyLayout} — restore, tolerant of a corrupt / partial snapshot.
+ *  - {@link applyLayout} — restore, tolerant of a corrupt / partial / outdated
+ *    snapshot.
  *  - {@link createLayoutPersistence} — debounced save to a host bridge (when the
  *    host exposes one) AND a local snapshot (localStorage), plus `reset()`.
  *
@@ -19,7 +21,7 @@
  * @module dsh-ps-floating-panels/client/layout-persist
  */
 
-import { LAYOUT_VERSION, PANEL_IDS, PANEL_META, type PanelId, type PersistedLayout } from './config.ts'
+import { LAYOUT_VERSION, NATIVE_COMPONENT, type PanelId, type PersistedLayout } from './config.ts'
 
 /** The slice of `DockviewApi` this module uses. */
 export interface DockviewApiLike {
@@ -36,75 +38,89 @@ interface PanelLike {
   params?: Record<string, unknown>
 }
 
+/** One region as the layout factory needs to see it. */
+export interface LayoutRegion {
+  readonly id: string
+  readonly title: string
+  readonly column: 'left' | 'center' | 'right'
+}
+
 /** localStorage key for the local snapshot. */
 export const LOCAL_SNAPSHOT_KEY = 'dsh-ps-floating-panels:layout'
 
+/** Column weight used to lay out the default split. */
+const COLUMN_WEIGHT: Record<LayoutRegion['column'], number> = { left: 26, center: 48, right: 26 }
+
+/** Read the region id out of a panel's params (v2 key, then the v1 key). */
+export function regionIdOfParams(params: Record<string, unknown> | undefined): PanelId | undefined {
+  const value = params?.regionId ?? params?.panelId
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 /**
- * Build a fresh default split layout. Returned as a new object every call so a
- * reset can never be defeated by a mutated cached constant.
+ * Build a fresh default split layout for `regions`. Returned as a new object
+ * every call so a reset can never be defeated by a mutated cached constant.
  *
- * Grid nesting alternates orientation per depth in Dockview: the root is a
- * horizontal branch, so its level-1 branches split vertically. That yields:
+ * The grid mirrors the shell it replaces — left column, center column, right
+ * column — with the regions of each column stacked vertically (alternating
+ * orientation per depth in Dockview):
  *
  * ```
  * ┌────────┬──────────────────┬──────────┐
- * │ conv.  │  code-preview    │ workspace│
- * │ tree   ├──────────────────┤ ──────── │
- * │        │  conversation    │ code-tree│
- * │        ├──────────────────┤ ──────── │
- * │        │  composer        │ team     │
+ * │ sidebar│  main            │ pane A   │
+ * │        │                  ├──────────┤
+ * │        │                  │ pane B   │
  * └────────┴──────────────────┴──────────┘
  * ```
  */
-export function defaultLayoutJson(): Record<string, unknown> {
-  const leaf = (id: string, views: PanelId[], size: number, active?: PanelId): Record<string, unknown> => ({
-    type: 'leaf',
-    size,
-    data: {
-      id,
-      views: views.map((p) => PANEL_META[p].component),
-      activeView: PANEL_META[active ?? views[0]].component,
-    },
-  })
-
+export function defaultLayoutJson(regions: readonly LayoutRegion[]): Record<string, unknown> {
   const panels: Record<string, unknown> = {}
-  for (const id of PANEL_IDS) {
-    panels[PANEL_META[id].component] = {
-      id: PANEL_META[id].component,
-      contentComponent: PANEL_META[id].component,
+  for (const region of regions) {
+    panels[region.id] = {
+      id: region.id,
+      contentComponent: NATIVE_COMPONENT,
       tabComponent: undefined,
-      title: PANEL_META[id].titleKey,
-      params: { panelId: id, collapsed: false },
+      title: region.title,
+      params: { regionId: region.id, collapsed: false },
     }
   }
 
+  const leaf = (column: LayoutRegion['column'], members: readonly LayoutRegion[], size: number): Record<string, unknown> => ({
+    type: 'leaf',
+    size,
+    data: {
+      id: `group-${column}`,
+      views: members.map((region) => region.id),
+      activeView: members[0]?.id,
+    },
+  })
+
+  const columns: { column: LayoutRegion['column']; members: LayoutRegion[] }[] = (
+    ['left', 'center', 'right'] as const
+  )
+    .map((column) => ({ column, members: regions.filter((region) => region.column === column) }))
+    .filter((entry) => entry.members.length > 0)
+
+  const totalWeight = columns.reduce((sum, entry) => sum + COLUMN_WEIGHT[entry.column], 0)
+
+  const columnNode = (entry: { column: LayoutRegion['column']; members: LayoutRegion[] }, size: number): Record<string, unknown> => {
+    if (entry.members.length === 1) return leaf(entry.column, entry.members, size)
+    const each = size / entry.members.length
+    return {
+      type: 'branch',
+      size,
+      data: entry.members.map((region) => leaf(entry.column, [region], each)),
+    }
+  }
+
+  const nodes = columns.map((entry) => columnNode(entry, (COLUMN_WEIGHT[entry.column] / totalWeight) * 100))
+  const root = nodes.length === 1
+    ? nodes[0]
+    : { type: 'branch', size: 100, data: nodes }
+
   return {
     grid: {
-      root: {
-        type: 'branch',
-        size: 100,
-        data: [
-          leaf('group-conversation-tree', ['conversation-tree'], 18),
-          {
-            type: 'branch',
-            size: 55,
-            data: [
-              leaf('group-code-preview', ['code-preview'], 34),
-              leaf('group-conversation', ['conversation'], 40),
-              leaf('group-composer', ['composer'], 26),
-            ],
-          },
-          {
-            type: 'branch',
-            size: 27,
-            data: [
-              leaf('group-workspace', ['workspace'], 34),
-              leaf('group-code-tree', ['code-tree'], 33),
-              leaf('group-agent-team', ['agent-team'], 33),
-            ],
-          },
-        ],
-      },
+      root,
       width: 1280,
       height: 800,
       orientation: 'HORIZONTAL',
@@ -124,7 +140,7 @@ export function readCollapsed(api: DockviewApiLike): Record<string, boolean> {
   const panels = (api as unknown as { panels?: readonly PanelLike[] }).panels
   if (!Array.isArray(panels)) return out
   for (const panel of panels) {
-    const panelId = panel?.params?.panelId
+    const panelId = regionIdOfParams(panel?.params)
     if (typeof panelId === 'string' && panelId.length > 0) {
       out[panelId] = panel?.params?.collapsed === true
     }
@@ -173,24 +189,33 @@ export function captureLayout(api: DockviewApiLike, now: () => number = Date.now
   }
 }
 
-/** Type guard for a persisted layout coming from untrusted storage. */
+/**
+ * Type guard for a persisted layout coming from untrusted storage.
+ *
+ * A snapshot from an older schema is NOT a layout this panel set can restore
+ * (v1 described a fixed seven-panel grid), so the version is part of the
+ * contract: an outdated payload is discarded and the caller falls back to the
+ * default split.
+ */
 export function isPersistedLayout(value: unknown): value is PersistedLayout {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
-  return typeof v.version === 'number' && 'dockview' in v
+  return v.version === LAYOUT_VERSION && 'dockview' in v
 }
 
 /**
  * Restore a snapshot into the API.
  *
- * A snapshot whose `dockview` payload is missing/`undefined` falls back to the
- * default split layout, so a half-written local snapshot degrades to "default
- * layout" rather than a blank grid.
+ * A snapshot whose `dockview` payload is missing/`undefined`, or which was
+ * written by an older schema (a fixed seven-panel grid this panel set cannot
+ * describe), falls back to the default split for `regions` — a stale snapshot
+ * degrades to "default layout" rather than a blank grid.
  *
  * @returns true when a snapshot (or the default) was applied.
  */
-export function applyLayout(api: DockviewApiLike, persisted: PersistedLayout | null): boolean {
-  const payload = persisted?.dockview ?? defaultLayoutJson()
+export function applyLayout(api: DockviewApiLike, persisted: PersistedLayout | null, regions: readonly LayoutRegion[]): boolean {
+  const usable = persisted !== null && persisted.version === LAYOUT_VERSION && persisted.dockview !== undefined
+  const payload = usable ? persisted.dockview : defaultLayoutJson(regions)
   try {
     api.clear()
   } catch {
@@ -203,7 +228,7 @@ export function applyLayout(api: DockviewApiLike, persisted: PersistedLayout | n
     // A corrupt payload must not kill the panel system: fall back to default.
     console.warn('[dsh-ps-floating-panels] fromJSON failed, using default layout', err)
     try {
-      api.fromJSON(defaultLayoutJson())
+      api.fromJSON(defaultLayoutJson(regions))
       return true
     } catch (err2) {
       console.error('[dsh-ps-floating-panels] default layout also failed', err2)
@@ -223,6 +248,8 @@ export interface LayoutHostBridge {
 export interface LayoutPersistenceOptions {
   /** The Dockview api to snapshot/restore. */
   api: () => DockviewApiLike | undefined
+  /** The regions the default layout is built from (re-read on every reset). */
+  regions: () => readonly LayoutRegion[]
   /** Optional host bridge (ctx.config-backed). */
   host?: LayoutHostBridge
   /** localStorage-like store; defaults to the global one when present. */
@@ -336,7 +363,7 @@ export function createLayoutPersistence(options: LayoutPersistenceOptions): Layo
       }
       try {
         api?.clear()
-        api?.fromJSON(defaultLayoutJson())
+        api?.fromJSON(defaultLayoutJson(options.regions()))
       } catch (err) {
         console.warn('[dsh-ps-floating-panels] reset failed', err)
       }

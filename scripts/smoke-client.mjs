@@ -7,6 +7,9 @@
  *   - the factory registers under id === 'dsh-ps-floating-panels'
  *   - module.exports has the named exports name / inject / apply (no default)
  *   - apply() injects into the `shell.overlay` slot and registers a component
+ *   - the native-region bridge (`window.__DSH_NATIVE_PANELS__`) is published and
+ *     is empty without a DOM (nothing to adopt)
+ *   - the settings transport is joined through `ctx.inject(['configForms'])`
  *   - the activation guard: apply() never throws, records its stage in
  *     `window.__DSH_PS_PANELS_ACTIVATION__`, and survives a host that refuses
  *     the locale registration or whose slots service explodes
@@ -57,15 +60,21 @@ const mod = captured.factory((spec) => {
 ok(typeof mod === 'object' && mod !== null, 'factory returns an object')
 ok(mod.name === 'dsh-ps-floating-panels', `named export name === 'dsh-ps-floating-panels' (got ${mod.name})`)
 ok(Array.isArray(mod.inject) && mod.inject.includes('slots'), `named export inject includes 'slots' (got ${JSON.stringify(mod.inject)})`)
+ok(mod.inject.includes('locale') && mod.inject.includes('theme'), 'named export inject includes the locale and theme services')
 ok(typeof mod.apply === 'function', 'named export apply is a function')
 ok(!('default' in mod), 'no default export (loader unwraps named exports)')
+ok(typeof mod.CLIENT_BUILD === 'string' && mod.CLIENT_BUILD.startsWith('0.2.0'), `CLIENT_BUILD is the v0.2.0 build (got ${mod.CLIENT_BUILD})`)
 
 /** Read the published activation record through the module's own reader. */
 const report = () => (typeof mod.readActivation === 'function' ? mod.readActivation(globalThis.window) : undefined)
 
-// Exercise apply() with a mock client ctx.
+// Exercise apply() with a mock client ctx. `inject` stands in for the client
+// Cordis nested injection used to join the settings document.
 let overlayInjected = false
 let registered = null
+let injectedDeps = null
+let scopedCallbacks = 0
+const settingsForm = { getSnapshot: () => ({ status: 'ready', writable: true, value: {} }), set: () => true }
 const mockCtx = {
   slots: {
     inject(name, cb) { if (name === 'shell.overlay') { overlayInjected = true; cb() } },
@@ -73,6 +82,7 @@ const mockCtx = {
   },
   effect(cb) { return cb() },
   on() { return () => {} },
+  inject(deps, cb) { injectedDeps = deps; scopedCallbacks += 1; cb({ configForms: { get: () => settingsForm } }) },
 }
 let threw = null
 try { mod.apply(mockCtx, { enabled: true }) } catch (error) { threw = error }
@@ -81,6 +91,18 @@ ok(threw === null, 'apply() returns normally on a good host')
 ok(overlayInjected, "apply() injects into the 'shell.overlay' slot")
 ok(registered !== null && registered.meta && registered.meta.name === 'shell.overlay', "register() targets slot 'shell.overlay'")
 ok(typeof registered?.comp === 'function', 'register() receives a React component function')
+ok(Array.isArray(injectedDeps) && injectedDeps.includes('configForms'), `apply() asks for the settings service (got ${JSON.stringify(injectedDeps)})`)
+ok(scopedCallbacks === 1, 'the settings injection callback ran exactly once')
+
+// The native-region bridge is published by the plugin itself (the Host has no
+// such global), and with no DOM there is nothing to adopt.
+const bridge = globalThis.window['__DSH_NATIVE_PANELS__']
+ok(bridge !== null && typeof bridge === 'object', 'apply() publishes window.__DSH_NATIVE_PANELS__')
+ok(bridge?.version === 1 && bridge?.plugin === 'dsh-ps-floating-panels', 'the bridge carries its version and plugin id')
+ok(typeof bridge?.list === 'function' && bridge.list().length === 0, 'the bridge lists no regions without a DOM')
+ok(bridge?.getElement('slot-sidebar') === null, 'getElement returns null for an unknown region')
+ok(typeof bridge?.subscribe === 'function' && typeof bridge.subscribe(() => {}) === 'function', 'the bridge hands out a subscription disposer')
+ok(typeof bridge?.adopt === 'function' && bridge.adopt('slot-sidebar', {}) === false, 'adopt() refuses an unknown region instead of throwing')
 
 // ---------------------------------------------------------------------------
 // Activation guard: a hostile host must degrade, never abort the Web boot.
@@ -90,6 +112,7 @@ ok(happy !== undefined, 'activate publishes an activation record')
 ok(happy?.ok === true, `…ok === true on a good host (got ${JSON.stringify(happy && { ok: happy.ok, stage: happy.stage })})`)
 ok(happy?.stage === 'active', `…stage === 'active' (got ${happy?.stage})`)
 ok(happy?.build === mod.CLIENT_BUILD, `…build === CLIENT_BUILD (got ${happy?.build})`)
+ok(happy?.regions === 0, `…and counts the discovered native regions (got ${happy?.regions})`)
 
 const realError = console.error
 const realWarn = console.warn

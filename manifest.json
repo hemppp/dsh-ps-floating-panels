@@ -4,8 +4,8 @@
   "id": "dsh-ps-floating-panels",
   "name": "dsh-ps-floating-panels",
   "displayName": "PS 浮动面板 / PS Floating Panels",
-  "version": "0.1.0",
-  "description": "Photoshop 式 Dockview 浮动/拆分面板系统（仅桌面端）。",
+  "version": "0.2.0",
+  "description": "把宿主真实 UI 拆进可浮动/停靠/拆分的 Dockview 面板（仅桌面端）。",
   "license": "MIT",
   "kind": "bundle",
   "platform": "web",
@@ -21,16 +21,14 @@
     "extensionPoint": "shell.overlay",
     "inject": [
       "@deepseek-ai/dsh-client-ui-layout",
-      "@deepseek-ai/dsh-client-ui-slots",
       "@deepseek-ai/dsh-client-ui-theme",
       "@deepseek-ai/dsh-client-locale",
-      "@deepseek-ai/dsh-client-ui-primitives"
+      "@deepseek-ai/dsh-client-ui-settings"
     ],
     "externals": [
       "react",
       "react-dom",
-      "react/jsx-runtime",
-      "@deepseek-ai/dsh-client-ui-primitives"
+      "react/jsx-runtime"
     ]
   },
   "bundle": {
@@ -42,10 +40,10 @@
     "schema": "schemastery",
     "fields": [
       "enabled",
+      "nativeAdopt",
       "showLauncher",
       "showStatusBadge",
       "minDesktopWidth",
-      "layoutMode",
       "persistDebounceMs",
       "collapsedPanels",
       "autoHideOnHover",
@@ -53,13 +51,9 @@
     ]
   },
   "panels": [
-    "conversation",
-    "conversation-tree",
-    "code-preview",
-    "composer",
-    "workspace",
-    "code-tree",
-    "agent-team"
+    "sidebar",
+    "main",
+    "rightbar"
   ],
   "targets": ["desktop"]
 }

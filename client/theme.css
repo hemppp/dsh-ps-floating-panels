@@ -19,8 +19,9 @@
   line-height: 1.45;
 }
 
-/* Outer Dockview container: the ONE place rounded corners are applied. Native
- * DSH elements mounted through the proxy are never re-rounded / re-bordered. */
+/* Outer Dockview container: the ONE place rounded corners are applied. Adopted
+ * native DSH elements are never re-rounded / re-bordered — only their position
+ * is neutralised (see inject-css.ts). */
 .ps-dock-shell {
   background: var(--dsw-alias-bg-layer-1, #ffffff);
   border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.12));
@@ -99,24 +100,28 @@
   color: var(--dsw-alias-label-tertiary, #9a9aa0);
 }
 
-/* Native decoupling proxy placeholder */
-.ps-proxy-placeholder {
+/* Adopted host region. The host node keeps its own colours; this only paints
+ * the panel behind it while the node is (re)attached. */
+.ps-native-host {
+  background: var(--dsw-alias-bg-base, #ffffff);
+}
+
+/* Region the host no longer exposes (its pane was closed) */
+.ps-panel-missing {
   background: var(--dsw-alias-bg-layer-2, #f5f5f7);
-  border: 1px dashed var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.18));
-  border-radius: 8px;
   color: var(--dsw-alias-label-secondary, #6b6b70);
 }
 
-.ps-proxy-placeholder__title {
+.ps-panel-missing__title {
   color: var(--dsw-alias-label-primary, #1c1c1e);
   font-weight: 600;
 }
 
-.ps-proxy-placeholder__body {
+.ps-panel-missing__body {
   color: var(--dsw-alias-label-secondary, #6b6b70);
 }
 
-.ps-proxy-placeholder__hint {
+.ps-panel-missing__hint {
   color: var(--dsw-alias-label-tertiary, #9a9aa0);
 }
 

@@ -16,9 +16,10 @@
  *    theming can be audited independently.
  *
  * The Dockview internals are NOT restyled beyond the minimum needed for the
- * shell to sit above the app; native DSH content rendered through the proxy
- * keeps its own borders/backgrounds/radius untouched. The single rounded
- * container is `.ps-dock-shell`.
+ * shell to sit above the app; native DSH content MOVED into a panel
+ * (`[data-ps-adopted]`) keeps its own borders/backgrounds/radius untouched —
+ * only its position is neutralised so it fills the panel body instead of the
+ * shell's grid cell. The single rounded container is `.ps-dock-shell`.
  *
  * @module dsh-ps-floating-panels/client/inject-css
  */
@@ -56,6 +57,13 @@ const GEOMETRY_CSS = String.raw`
   position: absolute;
   inset: 14px;
   overflow: hidden;
+}
+
+/* Adopted mode owns the whole viewport: the host's own shell columns are
+ * hidden behind us (see native-shell.ts), so the floating surface goes flush
+ * and gives the docked/floating groups the full window to snap inside. */
+.ps-floating-root[data-native='adopted'] .ps-dock-shell {
+  inset: 0;
 }
 
 .ps-dock-toolbar {
@@ -163,31 +171,49 @@ const GEOMETRY_CSS = String.raw`
   padding: 12px;
 }
 
-/* ---- native decoupling proxy ---- */
-.ps-proxy {
+/* ---- adopted native regions ----
+ * The host's own nodes are MOVED into these containers (never cloned), so the
+ * geometry the host/dockkit gave them must be neutralised: they were laid out
+ * inside the shell's own grid (sidebar | center | rightbar), not inside a
+ * Dockview panel. The theme layer stays untouched — only position wins. */
+.ps-native-host {
+  display: block;
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
 
-.ps-proxy > * {
-  flex: 1 1 auto;
+.ps-native-host > [data-ps-adopted] {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: auto;
+  height: auto;
+  min-width: 0;
   min-height: 0;
+  margin: 0 !important;
+  overflow: auto;
+  transform: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  z-index: auto;
 }
 
-.ps-proxy-placeholder {
-  display: flex;
-  flex-direction: column;
+/* Native region the host no longer exposes (e.g. its pane was closed). */
+.ps-panel-missing {
   gap: 6px;
-  margin: 8px;
   padding: 12px;
   font-size: 12px;
 }
 
-.ps-proxy-placeholder__title { font-size: 12px; }
-.ps-proxy-placeholder__body { font-size: 11px; }
-.ps-proxy-placeholder__hint { font-size: 11px; opacity: 0.85; }
+.ps-panel-missing__title { font-size: 12px; }
+.ps-panel-missing__body { font-size: 11px; }
+.ps-panel-missing__hint { font-size: 11px; opacity: 0.85; }
 
 /* ---- status badge / launcher ---- */
 .ps-status-badge {

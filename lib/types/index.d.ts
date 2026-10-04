@@ -16,6 +16,13 @@
  *      disposed with the plugin. The durable store lives beside the host's
  *      settings area (`$DSH_HOME`).
  *
+ * The browser half reaches the settings document through the client settings
+ * service (`ctx.configForms.get(namespace)` → `set('layout', json)`), which is
+ * the ONLY transport between the two halves: there is no direct Node↔browser
+ * call. A committed write lands here as a `scope.watch` notification and is
+ * mirrored to the snapshot file, so the settings document stays authoritative
+ * and the file survives a settings reset.
+ *
  * HARD BOUNDARY — this package never touches `agentLoop`, `sessions`, `agents`,
  * the tool pipeline, or any model-visible surface. It carries no agent state
  * and registers no tools. The layout is pure presentation state.
@@ -35,7 +42,7 @@ export declare const LAYOUT_NAMESPACE = "dsh-ps-floating-panels";
  */
 export declare const inject: string[];
 /** Persisted layout format version; the client owns the payload, the host carries the version through. */
-export declare const LAYOUT_VERSION = 1;
+export declare const LAYOUT_VERSION = 2;
 /**
  * The plugin's Config, as the Host validates this row's profile patch against
  * and the settings service generates the entry's page from.
@@ -49,14 +56,19 @@ export declare const LAYOUT_VERSION = 1;
 export interface Config {
     /** Master switch: when false the browser half mounts nothing. */
     enabled: boolean;
-    /** Show the floating launcher chip (hide-all / reset / show-all). */
+    /**
+     * Adopt the host's own UI into the floating panels: the browser half moves the
+     * real sidebar / main / right-column panes into its panels and hides the
+     * native shell behind them. `false` keeps the native UI untouched and only
+     * shows the launcher chip.
+     */
+    nativeAdopt: boolean;
+    /** Show the floating launcher chip (adopt / reset / show-all). */
     showLauncher: boolean;
     /** Show the status badge summarising the panel layout. */
     showStatusBadge: boolean;
     /** Below this viewport width the browser half renders nothing (native mobile). */
     minDesktopWidth: number;
-    /** How the split layout coexists with the host's own panels. */
-    layoutMode: 'overlay' | 'replace';
     /** Debounce for layout snapshots; 0 saves synchronously. */
     persistDebounceMs: number;
     /** Panels collapsed on first mount (before any snapshot exists). */
